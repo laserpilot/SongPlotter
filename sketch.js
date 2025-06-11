@@ -7,16 +7,20 @@ let canvasWidth = 1200;
 let canvasHeight = 800;
 let fftSize = 1024;
 
-// Frequency range settings with GUI controls
-let lowRange = { min: 20, max: 250 };
-let midRange = { min: 250, max: 4000 };
-let highRange = { min: 4000, max: 20000 };
-let samplingRate = 10; // How many samples per second
+// Dynamic frequency bands (3-8 bands)
+let numBands = 3;
+let frequencyBands = [
+  { min: 20, max: 250, scale: 1.0, color: [0, 0, 255] },     // Blue
+  { min: 250, max: 4000, scale: 1.0, color: [0, 255, 0] },   // Green  
+  { min: 4000, max: 20000, scale: 1.0, color: [255, 0, 0] }  // Red
+];
+let samplingRate = 10;
 let samplingCounter = 0;
 
 // GUI elements
-let lowMinSlider, lowMaxSlider, midMinSlider, midMaxSlider, highMinSlider, highMaxSlider;
-let samplingSlider;
+let numBandsSlider, samplingSlider;
+let bandControls = [];
+let guiPanel;
 
 function preload() {
   song = loadSound('musicfiles/02 Break.m4a', loaded);
@@ -30,61 +34,188 @@ function setup() {
   playButton = createButton("▶ Play & Record");
   playButton.mousePressed(togglePlayAndRecord);
   playButton.position(10, 10);
+  playButton.style('padding', '8px 12px');
+  playButton.style('font-size', '14px');
   
   exportButton = createButton("📄 Export SVG");
   exportButton.mousePressed(exportSVG);
-  exportButton.position(150, 10);
+  exportButton.position(160, 10);
+  exportButton.style('padding', '8px 12px');
+  exportButton.style('font-size', '14px');
   
   // File input for loading audio files
   fileInput = createFileInput(handleFile);
-  fileInput.position(10, 40);
+  fileInput.position(10, 50);
+  fileInput.style('font-size', '12px');
   
-  // Create frequency range controls
-  createFrequencyControls();
+  // Create GUI panel
+  createGUIPanel();
   
   console.log("Setup complete");
   if (song) song.setVolume(0.3);
 }
 
-function createFrequencyControls() {
-  let yStart = 80;
-  let spacing = 60;
+function createGUIPanel() {
+  // Create GUI panel div
+  guiPanel = createDiv('');
+  guiPanel.position(canvasWidth + 20, 10);
+  guiPanel.style('width', '320px');
+  guiPanel.style('height', `${canvasHeight - 20}px`);
+  guiPanel.style('background-color', '#f8f8f8');
+  guiPanel.style('border', '2px solid #ddd');
+  guiPanel.style('border-radius', '8px');
+  guiPanel.style('padding', '15px');
+  guiPanel.style('font-family', 'Arial, sans-serif');
+  guiPanel.style('overflow-y', 'auto');
   
-  // Low range controls
-  createElement('h4', 'Low Range (Bass)').position(canvasWidth + 20, yStart);
-  createElement('label', 'Min: ').position(canvasWidth + 20, yStart + 25);
-  lowMinSlider = createSlider(20, 500, lowRange.min);
-  lowMinSlider.position(canvasWidth + 60, yStart + 25);
-  createElement('label', 'Max: ').position(canvasWidth + 20, yStart + 45);
-  lowMaxSlider = createSlider(100, 1000, lowRange.max);
-  lowMaxSlider.position(canvasWidth + 60, yStart + 45);
+  // Number of bands control
+  let title = createElement('h3', 'Frequency Band Controls');
+  title.parent(guiPanel);
+  title.style('margin', '0 0 15px 0');
+  title.style('color', '#333');
   
-  // Mid range controls
-  yStart += spacing;
-  createElement('h4', 'Mid Range').position(canvasWidth + 20, yStart);
-  createElement('label', 'Min: ').position(canvasWidth + 20, yStart + 25);
-  midMinSlider = createSlider(200, 2000, midRange.min);
-  midMinSlider.position(canvasWidth + 60, yStart + 25);
-  createElement('label', 'Max: ').position(canvasWidth + 20, yStart + 45);
-  midMaxSlider = createSlider(1000, 8000, midRange.max);
-  midMaxSlider.position(canvasWidth + 60, yStart + 45);
+  let bandsLabel = createElement('label', 'Number of Bands (3-8):');
+  bandsLabel.parent(guiPanel);
+  bandsLabel.style('display', 'block');
+  bandsLabel.style('margin-bottom', '5px');
+  bandsLabel.style('font-weight', 'bold');
   
-  // High range controls
-  yStart += spacing;
-  createElement('h4', 'High Range (Treble)').position(canvasWidth + 20, yStart);
-  createElement('label', 'Min: ').position(canvasWidth + 20, yStart + 25);
-  highMinSlider = createSlider(2000, 10000, highRange.min);
-  highMinSlider.position(canvasWidth + 60, yStart + 25);
-  createElement('label', 'Max: ').position(canvasWidth + 20, yStart + 45);
-  highMaxSlider = createSlider(5000, 20000, highRange.max);
-  highMaxSlider.position(canvasWidth + 60, yStart + 45);
+  numBandsSlider = createSlider(3, 8, numBands);
+  numBandsSlider.parent(guiPanel);
+  numBandsSlider.style('width', '100%');
+  numBandsSlider.style('margin-bottom', '20px');
+  numBandsSlider.input(updateBandCount);
   
   // Sampling rate control
-  yStart += spacing;
-  createElement('h4', 'Sampling Rate').position(canvasWidth + 20, yStart);
-  createElement('label', 'Samples/sec: ').position(canvasWidth + 20, yStart + 25);
+  let samplingLabel = createElement('label', 'Sampling Rate (samples/sec):');
+  samplingLabel.parent(guiPanel);
+  samplingLabel.style('display', 'block');
+  samplingLabel.style('margin-bottom', '5px');
+  samplingLabel.style('font-weight', 'bold');
+  
   samplingSlider = createSlider(1, 60, samplingRate);
-  samplingSlider.position(canvasWidth + 100, yStart + 25);
+  samplingSlider.parent(guiPanel);
+  samplingSlider.style('width', '100%');
+  samplingSlider.style('margin-bottom', '25px');
+  
+  // Create initial band controls
+  createBandControls();
+}
+
+function updateBandCount() {
+  let newNumBands = numBandsSlider.value();
+  if (newNumBands !== numBands) {
+    numBands = newNumBands;
+    updateFrequencyBands();
+    recreateBandControls();
+  }
+}
+
+function updateFrequencyBands() {
+  // Generate evenly spaced frequency bands
+  let colors = [
+    [0, 0, 255],    // Blue
+    [0, 255, 0],    // Green
+    [255, 0, 0],    // Red
+    [255, 165, 0],  // Orange
+    [128, 0, 128],  // Purple
+    [255, 192, 203], // Pink
+    [0, 255, 255],  // Cyan
+    [255, 255, 0]   // Yellow
+  ];
+  
+  frequencyBands = [];
+  let minFreq = 20;
+  let maxFreq = 20000;
+  let logMin = Math.log10(minFreq);
+  let logMax = Math.log10(maxFreq);
+  
+  for (let i = 0; i < numBands; i++) {
+    let logStart = logMin + (i / numBands) * (logMax - logMin);
+    let logEnd = logMin + ((i + 1) / numBands) * (logMax - logMin);
+    
+    frequencyBands.push({
+      min: Math.round(Math.pow(10, logStart)),
+      max: Math.round(Math.pow(10, logEnd)),
+      scale: 1.0,
+      color: colors[i % colors.length]
+    });
+  }
+}
+
+function recreateBandControls() {
+  // Remove existing band controls
+  bandControls.forEach(control => {
+    control.container.remove();
+  });
+  bandControls = [];
+  
+  // Create new band controls
+  createBandControls();
+}
+
+function createBandControls() {
+  bandControls = [];
+  
+  for (let i = 0; i < numBands; i++) {
+    let container = createDiv('');
+    container.parent(guiPanel);
+    container.style('margin-bottom', '20px');
+    container.style('padding', '10px');
+    container.style('background-color', '#fff');
+    container.style('border-radius', '5px');
+    container.style('border', '1px solid #ccc');
+    
+    let bandLabel = createElement('h4', `Band ${i + 1}`);
+    bandLabel.parent(container);
+    bandLabel.style('margin', '0 0 10px 0');
+    bandLabel.style('color', `rgb(${frequencyBands[i].color[0]}, ${frequencyBands[i].color[1]}, ${frequencyBands[i].color[2]})`);
+    
+    // Min frequency
+    let minLabel = createElement('label', `Min: ${frequencyBands[i].min}Hz`);
+    minLabel.parent(container);
+    minLabel.style('display', 'block');
+    minLabel.style('font-size', '12px');
+    minLabel.style('margin-bottom', '3px');
+    
+    let minSlider = createSlider(20, 19999, frequencyBands[i].min);
+    minSlider.parent(container);
+    minSlider.style('width', '100%');
+    minSlider.style('margin-bottom', '10px');
+    
+    // Max frequency
+    let maxLabel = createElement('label', `Max: ${frequencyBands[i].max}Hz`);
+    maxLabel.parent(container);
+    maxLabel.style('display', 'block');
+    maxLabel.style('font-size', '12px');
+    maxLabel.style('margin-bottom', '3px');
+    
+    let maxSlider = createSlider(21, 20000, frequencyBands[i].max);
+    maxSlider.parent(container);
+    maxSlider.style('width', '100%');
+    maxSlider.style('margin-bottom', '10px');
+    
+    // Amplitude scale
+    let scaleLabel = createElement('label', `Amplitude Scale: ${frequencyBands[i].scale.toFixed(1)}x`);
+    scaleLabel.parent(container);
+    scaleLabel.style('display', 'block');
+    scaleLabel.style('font-size', '12px');
+    scaleLabel.style('margin-bottom', '3px');
+    
+    let scaleSlider = createSlider(0.1, 5.0, frequencyBands[i].scale, 0.1);
+    scaleSlider.parent(container);
+    scaleSlider.style('width', '100%');
+    
+    bandControls.push({
+      container,
+      minSlider,
+      maxSlider,
+      scaleSlider,
+      minLabel,
+      maxLabel,
+      scaleLabel
+    });
+  }
 }
 
 function loaded() {
@@ -103,15 +234,15 @@ function handleFile(file) {
 function draw() {
   background(255);
   
-  // Update frequency ranges from sliders
-  updateFrequencyRanges();
+  // Update frequency band settings from sliders
+  updateBandSettings();
   
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
     samplingCounter++;
-    if (samplingCounter >= 60 / samplingRate) { // Convert to frame-based sampling
+    if (samplingCounter >= 60 / samplingSlider.value()) {
       let spectrum = fft.analyze();
-      let dataPoint = analyzeFrequencyRanges(spectrum);
+      let dataPoint = analyzeFrequencyBands(spectrum);
       frequencyData.push(dataPoint);
       samplingCounter = 0;
     }
@@ -124,47 +255,72 @@ function draw() {
   drawUI();
 }
 
-function updateFrequencyRanges() {
-  lowRange.min = lowMinSlider.value();
-  lowRange.max = lowMaxSlider.value();
-  midRange.min = midMinSlider.value();
-  midRange.max = midMaxSlider.value();
-  highRange.min = highMinSlider.value();
-  highRange.max = highMaxSlider.value();
-  samplingRate = samplingSlider.value();
+function updateBandSettings() {
+  // Update frequency band settings from GUI controls
+  for (let i = 0; i < bandControls.length && i < frequencyBands.length; i++) {
+    let control = bandControls[i];
+    let band = frequencyBands[i];
+    
+    // Get values from sliders
+    let newMin = control.minSlider.value();
+    let newMax = control.maxSlider.value();
+    let newScale = control.scaleSlider.value();
+    
+    // Ensure min < max and no overlap with adjacent bands
+    if (newMin >= newMax) {
+      newMin = newMax - 1;
+      control.minSlider.value(newMin);
+    }
+    
+    // Prevent overlap with previous band
+    if (i > 0 && newMin <= frequencyBands[i-1].max) {
+      newMin = frequencyBands[i-1].max + 1;
+      control.minSlider.value(newMin);
+    }
+    
+    // Prevent overlap with next band
+    if (i < frequencyBands.length - 1 && newMax >= frequencyBands[i+1].min) {
+      newMax = frequencyBands[i+1].min - 1;
+      control.maxSlider.value(newMax);
+    }
+    
+    // Update band settings
+    band.min = newMin;
+    band.max = newMax;
+    band.scale = newScale;
+    
+    // Update labels
+    control.minLabel.html(`Min: ${newMin}Hz`);
+    control.maxLabel.html(`Max: ${newMax}Hz`);
+    control.scaleLabel.html(`Amplitude Scale: ${newScale.toFixed(1)}x`);
+  }
 }
 
-function analyzeFrequencyRanges(spectrum) {
-  let nyquist = 22050; // Sample rate / 2
+function analyzeFrequencyBands(spectrum) {
+  let nyquist = 22050;
   let binSize = nyquist / spectrum.length;
+  let dataPoint = { time: song ? song.currentTime() : 0, bands: [] };
   
-  let lowSum = 0, midSum = 0, highSum = 0;
-  let lowCount = 0, midCount = 0, highCount = 0;
-  
-  for (let i = 0; i < spectrum.length; i++) {
-    let freq = i * binSize;
-    let amplitude = spectrum[i];
+  for (let i = 0; i < frequencyBands.length; i++) {
+    let band = frequencyBands[i];
+    let sum = 0;
+    let count = 0;
     
-    if (freq >= lowRange.min && freq <= lowRange.max) {
-      lowSum += amplitude;
-      lowCount++;
+    for (let j = 0; j < spectrum.length; j++) {
+      let freq = j * binSize;
+      let amplitude = spectrum[j];
+      
+      if (freq >= band.min && freq <= band.max) {
+        sum += amplitude;
+        count++;
+      }
     }
-    if (freq >= midRange.min && freq <= midRange.max) {
-      midSum += amplitude;
-      midCount++;
-    }
-    if (freq >= highRange.min && freq <= highRange.max) {
-      highSum += amplitude;
-      highCount++;
-    }
+    
+    let avgAmplitude = count > 0 ? (sum / count) * band.scale : 0;
+    dataPoint.bands.push(avgAmplitude);
   }
   
-  return {
-    time: song ? song.currentTime() : 0,
-    low: lowCount > 0 ? lowSum / lowCount : 0,
-    mid: midCount > 0 ? midSum / midCount : 0,
-    high: highCount > 0 ? highSum / highCount : 0
-  };
+  return dataPoint;
 }
 
 function drawFrequencyLines() {
@@ -172,7 +328,7 @@ function drawFrequencyLines() {
   
   let margin = 80;
   let plotWidth = width - 2 * margin;
-  let plotHeight = (height - 2 * margin - 80) / 3; // Divide into 3 sections
+  let plotHeight = (height - 2 * margin - 80) / numBands;
   
   // Draw axes and grid
   stroke(0);
@@ -195,38 +351,37 @@ function drawFrequencyLines() {
     line(x, margin, x, height - margin);
   }
   
-  // Draw amplitude labels and sections
+  // Draw amplitude labels and sections for each band
   textAlign(RIGHT, CENTER);
-  let sectionHeight = plotHeight;
-  let sections = ['High', 'Mid', 'Low'];
-  let colors = ['red', 'green', 'blue'];
+  textSize(9);
   
-  for (let section = 0; section < 3; section++) {
-    let sectionY = margin + section * sectionHeight;
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let sectionY = margin + bandIndex * plotHeight;
+    let band = frequencyBands[bandIndex];
     
     // Section label
     fill(0);
-    text(sections[section], margin - 10, sectionY + sectionHeight / 2);
+    text(`${band.min}-${band.max}Hz`, margin - 10, sectionY + plotHeight / 2);
     
     // Grid lines
     stroke(200);
     strokeWeight(0.5);
     line(margin, sectionY, width - margin, sectionY);
-    line(margin, sectionY + sectionHeight, width - margin, sectionY + sectionHeight);
+    if (bandIndex === numBands - 1) {
+      line(margin, sectionY + plotHeight, width - margin, sectionY + plotHeight);
+    }
     
     // Draw frequency line
     if (frequencyData.length > 1) {
-      stroke(colors[section]);
+      stroke(band.color[0], band.color[1], band.color[2]);
       strokeWeight(2);
       noFill();
       
       beginShape();
       for (let i = 0; i < frequencyData.length; i++) {
         let x = map(i, 0, frequencyData.length - 1, margin, width - margin);
-        let amplitude = section === 0 ? frequencyData[i].high : 
-                       section === 1 ? frequencyData[i].mid : 
-                       frequencyData[i].low;
-        let y = map(amplitude, 0, 255, sectionY + sectionHeight, sectionY);
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
+        let y = map(amplitude, 0, 255, sectionY + plotHeight, sectionY);
         vertex(x, y);
       }
       endShape();
@@ -246,13 +401,10 @@ function drawUI() {
   }
   info.push(`Recording: ${isRecording ? 'ON' : 'OFF'}`);
   info.push(`Data points: ${frequencyData.length}`);
-  info.push(`Sampling rate: ${samplingRate} samples/sec`);
-  info.push(`Low: ${lowRange.min}-${lowRange.max}Hz`);
-  info.push(`Mid: ${midRange.min}-${midRange.max}Hz`);
-  info.push(`High: ${highRange.min}-${highRange.max}Hz`);
+  info.push(`Bands: ${numBands}`);
   
   for (let i = 0; i < info.length; i++) {
-    text(info[i], 10, 350 + i * 15);
+    text(info[i], 10, 85 + i * 15);
   }
 }
 
@@ -306,17 +458,23 @@ function exportSVG() {
 function generateFrequencyLinesSVG() {
   let margin = 80;
   let plotWidth = canvasWidth - 2 * margin;
-  let plotHeight = (canvasHeight - 2 * margin - 80) / 3;
+  let plotHeight = (canvasHeight - 2 * margin - 80) / numBands;
   
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
   <style>
     .axis { stroke: black; stroke-width: 2; }
     .grid { stroke: #cccccc; stroke-width: 0.5; }
-    .label { font-family: Arial, sans-serif; font-size: 10px; fill: black; }
-    .low-line { stroke: blue; stroke-width: 2; fill: none; }
-    .mid-line { stroke: green; stroke-width: 2; fill: none; }
-    .high-line { stroke: red; stroke-width: 2; fill: none; }
+    .label { font-family: Arial, sans-serif; font-size: 10px; fill: black; }`;
+  
+  // Generate CSS classes for each band
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    svg += `
+    .band-${i} { stroke: rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]}); stroke-width: 2; fill: none; }`;
+  }
+  
+  svg += `
   </style>
   
   <!-- Background -->
@@ -337,30 +495,30 @@ function generateFrequencyLinesSVG() {
   <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
   }
   
-  // Section labels and grid lines
-  let sections = ['High', 'Mid', 'Low'];
-  let classes = ['high-line', 'mid-line', 'low-line'];
-  
-  for (let section = 0; section < 3; section++) {
-    let sectionY = margin + section * plotHeight;
+  // Section labels and grid lines for each band
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let sectionY = margin + bandIndex * plotHeight;
+    let band = frequencyBands[bandIndex];
     svg += `
-  <line x1="${margin}" y1="${sectionY}" x2="${canvasWidth - margin}" y2="${sectionY}" class="grid"/>
-  <line x1="${margin}" y1="${sectionY + plotHeight}" x2="${canvasWidth - margin}" y2="${sectionY + plotHeight}" class="grid"/>
-  <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${sections[section]}</text>`;
+  <line x1="${margin}" y1="${sectionY}" x2="${canvasWidth - margin}" y2="${sectionY}" class="grid"/>`;
+    if (bandIndex === numBands - 1) {
+      svg += `
+  <line x1="${margin}" y1="${sectionY + plotHeight}" x2="${canvasWidth - margin}" y2="${sectionY + plotHeight}" class="grid"/>`;
+    }
+    svg += `
+  <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${band.min}-${band.max}Hz</text>`;
   }
   
   // Frequency lines
   if (frequencyData.length > 1) {
-    for (let section = 0; section < 3; section++) {
-      let sectionY = margin + section * plotHeight;
+    for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      let sectionY = margin + bandIndex * plotHeight;
       svg += `
-  <polyline class="${classes[section]}" points="`;
+  <polyline class="band-${bandIndex}" points="`;
       
       for (let i = 0; i < frequencyData.length; i++) {
         let x = map(i, 0, frequencyData.length - 1, margin, canvasWidth - margin);
-        let amplitude = section === 0 ? frequencyData[i].high : 
-                       section === 1 ? frequencyData[i].mid : 
-                       frequencyData[i].low;
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
         let y = map(amplitude, 0, 255, sectionY + plotHeight, sectionY);
         svg += `${x},${y} `;
       }
