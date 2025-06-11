@@ -4,7 +4,7 @@ let frequencyData = [];
 let isRecording = false;
 let playButton, exportButton, fileInput;
 let canvasWidth = 1200;
-let canvasHeight = 800;
+let canvasHeight = 900;
 let fftSize = 1024;
 
 // Dynamic frequency bands (3-8 bands)
@@ -16,9 +16,12 @@ let frequencyBands = [
 ];
 let samplingRate = 10;
 let samplingCounter = 0;
+let smoothingFrames = 3;
+let smoothingBuffer = [];
+let overlayMode = false;
 
 // GUI elements
-let numBandsSlider, samplingSlider;
+let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle;
 let bandControls = [];
 let guiPanel;
 
@@ -96,7 +99,25 @@ function createGUIPanel() {
   samplingSlider = createSlider(1, 60, samplingRate);
   samplingSlider.parent(guiPanel);
   samplingSlider.style('width', '100%');
-  samplingSlider.style('margin-bottom', '25px');
+  samplingSlider.style('margin-bottom', '15px');
+  
+  // Smoothing control
+  let smoothingLabel = createElement('label', 'Smoothing (frames):');
+  smoothingLabel.parent(guiPanel);
+  smoothingLabel.style('display', 'block');
+  smoothingLabel.style('margin-bottom', '5px');
+  smoothingLabel.style('font-weight', 'bold');
+  
+  smoothingSlider = createSlider(1, 10, smoothingFrames);
+  smoothingSlider.parent(guiPanel);
+  smoothingSlider.style('width', '100%');
+  smoothingSlider.style('margin-bottom', '15px');
+  
+  // Overlay mode toggle
+  overlayToggle = createCheckbox('Overlay all bands', overlayMode);
+  overlayToggle.parent(guiPanel);
+  overlayToggle.style('margin-bottom', '25px');
+  overlayToggle.style('font-weight', 'bold');
   
   // Create initial band controls
   createBandControls();
@@ -227,6 +248,7 @@ function handleFile(file) {
   if (file.type === 'audio') {
     song = loadSound(file.data, loaded);
     frequencyData = [];
+    smoothingBuffer = [];
     console.log("New audio file loaded");
   }
 }
@@ -237,12 +259,22 @@ function draw() {
   // Update frequency band settings from sliders
   updateBandSettings();
   
+  // Update settings
+  smoothingFrames = smoothingSlider.value();
+  overlayMode = overlayToggle.checked();
+  
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
     samplingCounter++;
     if (samplingCounter >= 60 / samplingSlider.value()) {
       let spectrum = fft.analyze();
       let dataPoint = analyzeFrequencyBands(spectrum);
+      
+      // Apply smoothing
+      if (smoothingFrames > 1) {
+        dataPoint = applySmoothing(dataPoint);
+      }
+      
       frequencyData.push(dataPoint);
       samplingCounter = 0;
     }
@@ -299,7 +331,9 @@ function updateBandSettings() {
 function analyzeFrequencyBands(spectrum) {
   let nyquist = 22050;
   let binSize = nyquist / spectrum.length;
-  let dataPoint = { time: song ? song.currentTime() : 0, bands: [] };
+  // Use elapsed time based on data points rather than song.currentTime() for accuracy
+  let elapsedTime = frequencyData.length / samplingSlider.value();
+  let dataPoint = { time: elapsedTime, bands: [] };
   
   for (let i = 0; i < frequencyBands.length; i++) {
     let band = frequencyBands[i];
@@ -323,11 +357,48 @@ function analyzeFrequencyBands(spectrum) {
   return dataPoint;
 }
 
+function applySmoothing(newDataPoint) {
+  // Add new data point to buffer
+  smoothingBuffer.push(newDataPoint);
+  
+  // Keep buffer size limited to smoothingFrames
+  if (smoothingBuffer.length > smoothingFrames) {
+    smoothingBuffer.shift();
+  }
+  
+  // If we don't have enough frames yet, return the new point
+  if (smoothingBuffer.length < smoothingFrames) {
+    return newDataPoint;
+  }
+  
+  // Calculate averaged data point
+  let smoothedPoint = { time: newDataPoint.time, bands: [] };
+  
+  for (let bandIndex = 0; bandIndex < newDataPoint.bands.length; bandIndex++) {
+    let sum = 0;
+    for (let frameIndex = 0; frameIndex < smoothingBuffer.length; frameIndex++) {
+      sum += smoothingBuffer[frameIndex].bands[bandIndex];
+    }
+    smoothedPoint.bands.push(sum / smoothingBuffer.length);
+  }
+  
+  return smoothedPoint;
+}
+
 function drawFrequencyLines() {
   if (frequencyData.length === 0) return;
   
   let margin = 80;
   let plotWidth = width - 2 * margin;
+  
+  if (overlayMode) {
+    drawOverlayMode(margin, plotWidth);
+  } else {
+    drawSeparateBands(margin, plotWidth);
+  }
+}
+
+function drawSeparateBands(margin, plotWidth) {
   let plotHeight = (height - 2 * margin - 80) / numBands;
   
   // Draw axes and grid
@@ -337,19 +408,7 @@ function drawFrequencyLines() {
   line(margin, margin, margin, height - margin); // Y-axis
   
   // Draw time labels
-  textAlign(CENTER, TOP);
-  textSize(10);
-  fill(0);
-  let duration = song ? song.duration() : 0;
-  for (let i = 0; i <= 10; i++) {
-    let time = map(i, 0, 10, 0, duration);
-    let x = map(i, 0, 10, margin, width - margin);
-    text(time.toFixed(1) + "s", x, height - margin + 10);
-    
-    stroke(200);
-    strokeWeight(0.5);
-    line(x, margin, x, height - margin);
-  }
+  drawTimeLabels(margin);
   
   // Draw amplitude labels and sections for each band
   textAlign(RIGHT, CENTER);
@@ -389,6 +448,102 @@ function drawFrequencyLines() {
   }
 }
 
+function drawOverlayMode(margin, plotWidth) {
+  let plotHeight = height - 2 * margin - 80;
+  
+  // Draw axes and grid
+  stroke(0);
+  strokeWeight(2);
+  line(margin, height - margin, width - margin, height - margin); // X-axis
+  line(margin, margin, margin, height - margin); // Y-axis
+  
+  // Draw time labels
+  drawTimeLabels(margin);
+  
+  // Draw amplitude grid lines
+  stroke(200);
+  strokeWeight(0.5);
+  for (let i = 0; i <= 10; i++) {
+    let y = map(i, 0, 10, height - margin, margin);
+    line(margin, y, width - margin, y);
+  }
+  
+  // Draw amplitude labels
+  textAlign(RIGHT, CENTER);
+  textSize(9);
+  fill(0);
+  for (let i = 0; i <= 10; i++) {
+    let y = map(i, 0, 10, height - margin, margin);
+    let amplitude = map(i, 0, 10, 0, 255);
+    text(Math.round(amplitude), margin - 10, y);
+  }
+  
+  // Draw legend
+  drawLegend(margin);
+  
+  // Draw all frequency lines overlaid
+  if (frequencyData.length > 1) {
+    for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      let band = frequencyBands[bandIndex];
+      stroke(band.color[0], band.color[1], band.color[2]);
+      strokeWeight(2);
+      noFill();
+      
+      beginShape();
+      for (let i = 0; i < frequencyData.length; i++) {
+        let x = map(i, 0, frequencyData.length - 1, margin, width - margin);
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
+        let y = map(amplitude, 0, 255, height - margin, margin);
+        vertex(x, y);
+      }
+      endShape();
+    }
+  }
+}
+
+function drawTimeLabels(margin) {
+  textAlign(CENTER, TOP);
+  textSize(10);
+  fill(0);
+  let maxTime = frequencyData.length > 0 ? 
+    frequencyData[frequencyData.length - 1].time : 
+    (song ? song.duration() : 0);
+  
+  for (let i = 0; i <= 10; i++) {
+    let time = map(i, 0, 10, 0, maxTime);
+    let x = map(i, 0, 10, margin, width - margin);
+    text(time.toFixed(1) + "s", x, height - margin + 10);
+    
+    stroke(200);
+    strokeWeight(0.5);
+    line(x, margin, x, height - margin);
+  }
+}
+
+function drawLegend(margin) {
+  // Draw legend in top right
+  let legendX = width - margin - 150;
+  let legendY = margin + 20;
+  
+  textAlign(LEFT, CENTER);
+  textSize(10);
+  
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let y = legendY + i * 15;
+    
+    // Color line
+    stroke(band.color[0], band.color[1], band.color[2]);
+    strokeWeight(3);
+    line(legendX, y, legendX + 20, y);
+    
+    // Label
+    fill(0);
+    noStroke();
+    text(`${band.min}-${band.max}Hz`, legendX + 25, y);
+  }
+}
+
 function drawUI() {
   fill(0);
   textAlign(LEFT, TOP);
@@ -397,11 +552,15 @@ function drawUI() {
   let info = [];
   if (song) {
     info.push(`Duration: ${song.duration().toFixed(1)}s`);
-    info.push(`Current time: ${song.currentTime().toFixed(1)}s`);
+    // Show estimated time based on data points for accuracy
+    let estimatedTime = frequencyData.length / samplingSlider.value();
+    info.push(`Recorded time: ${estimatedTime.toFixed(1)}s`);
   }
   info.push(`Recording: ${isRecording ? 'ON' : 'OFF'}`);
   info.push(`Data points: ${frequencyData.length}`);
   info.push(`Bands: ${numBands}`);
+  info.push(`Smoothing: ${smoothingFrames} frames`);
+  info.push(`Mode: ${overlayMode ? 'Overlay' : 'Separate'}`);
   
   for (let i = 0; i < info.length; i++) {
     text(info[i], 10, 85 + i * 15);
@@ -421,6 +580,7 @@ function togglePlayAndRecord() {
   if (!song.isPlaying()) {
     frequencyData = [];
     samplingCounter = 0;
+    smoothingBuffer = []; // Reset smoothing buffer
     isRecording = true;
     song.play();
     playButton.html("⏸ Stop & Pause");
