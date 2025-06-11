@@ -3,8 +3,8 @@ let fft;
 let frequencyData = [];
 let isRecording = false;
 let playButton, exportButton, fileInput;
-let canvasWidth = 1200;
-let canvasHeight = 900;
+let canvasWidth = 2000;
+let canvasHeight = 1500;
 let fftSize = 1024;
 
 // Dynamic frequency bands (3-8 bands)
@@ -19,9 +19,11 @@ let samplingCounter = 0;
 let smoothingFrames = 3;
 let smoothingBuffer = [];
 let overlayMode = false;
+let amplitudeNormalization = true;
+let amplitudeStats = { low: [], mid: [], high: [] };
 
 // GUI elements
-let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle;
+let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
 let bandControls = [];
 let guiPanel;
 
@@ -36,20 +38,20 @@ function setup() {
   // Create main UI elements
   playButton = createButton("▶ Play & Record");
   playButton.mousePressed(togglePlayAndRecord);
-  playButton.position(10, 10);
-  playButton.style('padding', '8px 12px');
-  playButton.style('font-size', '14px');
+  playButton.position(20, 20);
+  playButton.style('padding', '12px 18px');
+  playButton.style('font-size', '16px');
   
   exportButton = createButton("📄 Export SVG");
   exportButton.mousePressed(exportSVG);
-  exportButton.position(160, 10);
-  exportButton.style('padding', '8px 12px');
-  exportButton.style('font-size', '14px');
+  exportButton.position(200, 20);
+  exportButton.style('padding', '12px 18px');
+  exportButton.style('font-size', '16px');
   
   // File input for loading audio files
   fileInput = createFileInput(handleFile);
-  fileInput.position(10, 50);
-  fileInput.style('font-size', '12px');
+  fileInput.position(20, 70);
+  fileInput.style('font-size', '14px');
   
   // Create GUI panel
   createGUIPanel();
@@ -61,31 +63,35 @@ function setup() {
 function createGUIPanel() {
   // Create GUI panel div
   guiPanel = createDiv('');
-  guiPanel.position(canvasWidth + 20, 10);
-  guiPanel.style('width', '320px');
-  guiPanel.style('height', `${canvasHeight - 20}px`);
+  guiPanel.position(canvasWidth + 30, 20);
+  guiPanel.style('width', '400px');
+  guiPanel.style('height', `${canvasHeight - 40}px`);
   guiPanel.style('background-color', '#f8f8f8');
   guiPanel.style('border', '2px solid #ddd');
-  guiPanel.style('border-radius', '8px');
-  guiPanel.style('padding', '15px');
+  guiPanel.style('border-radius', '12px');
+  guiPanel.style('padding', '20px');
   guiPanel.style('font-family', 'Arial, sans-serif');
   guiPanel.style('overflow-y', 'auto');
+  guiPanel.style('box-shadow', '0 4px 8px rgba(0,0,0,0.1)');
   
   // Number of bands control
   let title = createElement('h3', 'Frequency Band Controls');
   title.parent(guiPanel);
-  title.style('margin', '0 0 15px 0');
+  title.style('margin', '0 0 20px 0');
   title.style('color', '#333');
+  title.style('font-size', '18px');
   
   let bandsLabel = createElement('label', 'Number of Bands (3-8):');
   bandsLabel.parent(guiPanel);
   bandsLabel.style('display', 'block');
-  bandsLabel.style('margin-bottom', '5px');
+  bandsLabel.style('margin-bottom', '8px');
   bandsLabel.style('font-weight', 'bold');
+  bandsLabel.style('font-size', '14px');
   
   numBandsSlider = createSlider(3, 8, numBands);
   numBandsSlider.parent(guiPanel);
   numBandsSlider.style('width', '100%');
+  numBandsSlider.style('height', '20px');
   numBandsSlider.style('margin-bottom', '20px');
   numBandsSlider.input(updateBandCount);
   
@@ -93,31 +99,43 @@ function createGUIPanel() {
   let samplingLabel = createElement('label', 'Sampling Rate (samples/sec):');
   samplingLabel.parent(guiPanel);
   samplingLabel.style('display', 'block');
-  samplingLabel.style('margin-bottom', '5px');
+  samplingLabel.style('margin-bottom', '8px');
   samplingLabel.style('font-weight', 'bold');
+  samplingLabel.style('font-size', '14px');
   
   samplingSlider = createSlider(1, 60, samplingRate);
   samplingSlider.parent(guiPanel);
   samplingSlider.style('width', '100%');
-  samplingSlider.style('margin-bottom', '15px');
+  samplingSlider.style('height', '20px');
+  samplingSlider.style('margin-bottom', '20px');
   
   // Smoothing control
   let smoothingLabel = createElement('label', 'Smoothing (frames):');
   smoothingLabel.parent(guiPanel);
   smoothingLabel.style('display', 'block');
-  smoothingLabel.style('margin-bottom', '5px');
+  smoothingLabel.style('margin-bottom', '8px');
   smoothingLabel.style('font-weight', 'bold');
+  smoothingLabel.style('font-size', '14px');
   
   smoothingSlider = createSlider(1, 10, smoothingFrames);
   smoothingSlider.parent(guiPanel);
   smoothingSlider.style('width', '100%');
-  smoothingSlider.style('margin-bottom', '15px');
+  smoothingSlider.style('height', '20px');
+  smoothingSlider.style('margin-bottom', '20px');
   
   // Overlay mode toggle
   overlayToggle = createCheckbox('Overlay all bands', overlayMode);
   overlayToggle.parent(guiPanel);
-  overlayToggle.style('margin-bottom', '25px');
+  overlayToggle.style('margin-bottom', '15px');
   overlayToggle.style('font-weight', 'bold');
+  overlayToggle.style('font-size', '14px');
+  
+  // Normalization toggle
+  normalizationToggle = createCheckbox('Normalize amplitude across bands', amplitudeNormalization);
+  normalizationToggle.parent(guiPanel);
+  normalizationToggle.style('margin-bottom', '30px');
+  normalizationToggle.style('font-weight', 'bold');
+  normalizationToggle.style('font-size', '14px');
   
   // Create initial band controls
   createBandControls();
@@ -181,51 +199,59 @@ function createBandControls() {
   for (let i = 0; i < numBands; i++) {
     let container = createDiv('');
     container.parent(guiPanel);
-    container.style('margin-bottom', '20px');
-    container.style('padding', '10px');
+    container.style('margin-bottom', '25px');
+    container.style('padding', '15px');
     container.style('background-color', '#fff');
-    container.style('border-radius', '5px');
-    container.style('border', '1px solid #ccc');
+    container.style('border-radius', '8px');
+    container.style('border', '2px solid #ddd');
+    container.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
     
     let bandLabel = createElement('h4', `Band ${i + 1}`);
     bandLabel.parent(container);
-    bandLabel.style('margin', '0 0 10px 0');
+    bandLabel.style('margin', '0 0 15px 0');
+    bandLabel.style('font-size', '16px');
     bandLabel.style('color', `rgb(${frequencyBands[i].color[0]}, ${frequencyBands[i].color[1]}, ${frequencyBands[i].color[2]})`);
     
     // Min frequency
     let minLabel = createElement('label', `Min: ${frequencyBands[i].min}Hz`);
     minLabel.parent(container);
     minLabel.style('display', 'block');
-    minLabel.style('font-size', '12px');
-    minLabel.style('margin-bottom', '3px');
+    minLabel.style('font-size', '13px');
+    minLabel.style('margin-bottom', '5px');
+    minLabel.style('font-weight', 'bold');
     
     let minSlider = createSlider(20, 19999, frequencyBands[i].min);
     minSlider.parent(container);
     minSlider.style('width', '100%');
-    minSlider.style('margin-bottom', '10px');
+    minSlider.style('height', '18px');
+    minSlider.style('margin-bottom', '15px');
     
     // Max frequency
     let maxLabel = createElement('label', `Max: ${frequencyBands[i].max}Hz`);
     maxLabel.parent(container);
     maxLabel.style('display', 'block');
-    maxLabel.style('font-size', '12px');
-    maxLabel.style('margin-bottom', '3px');
+    maxLabel.style('font-size', '13px');
+    maxLabel.style('margin-bottom', '5px');
+    maxLabel.style('font-weight', 'bold');
     
     let maxSlider = createSlider(21, 20000, frequencyBands[i].max);
     maxSlider.parent(container);
     maxSlider.style('width', '100%');
-    maxSlider.style('margin-bottom', '10px');
+    maxSlider.style('height', '18px');
+    maxSlider.style('margin-bottom', '15px');
     
     // Amplitude scale
     let scaleLabel = createElement('label', `Amplitude Scale: ${frequencyBands[i].scale.toFixed(1)}x`);
     scaleLabel.parent(container);
     scaleLabel.style('display', 'block');
-    scaleLabel.style('font-size', '12px');
-    scaleLabel.style('margin-bottom', '3px');
+    scaleLabel.style('font-size', '13px');
+    scaleLabel.style('margin-bottom', '5px');
+    scaleLabel.style('font-weight', 'bold');
     
     let scaleSlider = createSlider(0.1, 5.0, frequencyBands[i].scale, 0.1);
     scaleSlider.parent(container);
     scaleSlider.style('width', '100%');
+    scaleSlider.style('height', '18px');
     
     bandControls.push({
       container,
@@ -262,6 +288,7 @@ function draw() {
   // Update settings
   smoothingFrames = smoothingSlider.value();
   overlayMode = overlayToggle.checked();
+  amplitudeNormalization = normalizationToggle.checked();
   
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
@@ -275,9 +302,21 @@ function draw() {
         dataPoint = applySmoothing(dataPoint);
       }
       
+      // Apply normalization if enabled
+      if (amplitudeNormalization) {
+        dataPoint = normalizeAmplitudes(dataPoint);
+      }
+      
       frequencyData.push(dataPoint);
       samplingCounter = 0;
     }
+  }
+  
+  // Stop recording when song ends to ensure full duration
+  if (song && !song.isPlaying() && isRecording && song.currentTime() >= song.duration() - 0.1) {
+    isRecording = false;
+    playButton.html("▶ Play & Record");
+    console.log("Recording completed - full song captured");
   }
   
   // Draw the frequency lines
@@ -385,6 +424,53 @@ function applySmoothing(newDataPoint) {
   return smoothedPoint;
 }
 
+function normalizeAmplitudes(dataPoint) {
+  if (!amplitudeNormalization || dataPoint.bands.length === 0) {
+    return dataPoint;
+  }
+  
+  // Calculate statistics for normalization
+  let maxAmplitude = Math.max(...dataPoint.bands);
+  let minAmplitude = Math.min(...dataPoint.bands);
+  let range = maxAmplitude - minAmplitude;
+  
+  if (range === 0) return dataPoint;
+  
+  // Normalize each band to 0-255 range based on relative differences
+  let normalizedPoint = { time: dataPoint.time, bands: [] };
+  
+  for (let i = 0; i < dataPoint.bands.length; i++) {
+    // Apply frequency-specific weighting to compensate for natural amplitude differences
+    let frequencyWeight = getFrequencyWeight(i);
+    let weightedAmplitude = dataPoint.bands[i] * frequencyWeight;
+    
+    // Normalize to 0-255 range
+    let normalized = map(weightedAmplitude, 0, 255 * frequencyWeight, 0, 255);
+    normalized = constrain(normalized, 0, 255);
+    
+    normalizedPoint.bands.push(normalized);
+  }
+  
+  return normalizedPoint;
+}
+
+function getFrequencyWeight(bandIndex) {
+  // Apply weights to compensate for natural frequency response differences
+  // Low frequencies typically have higher natural amplitude
+  let band = frequencyBands[bandIndex];
+  let centerFreq = (band.min + band.max) / 2;
+  
+  if (centerFreq < 500) {
+    return 0.3; // Reduce low frequency dominance
+  } else if (centerFreq < 2000) {
+    return 0.7; // Slightly reduce mid frequencies
+  } else if (centerFreq < 8000) {
+    return 1.0; // Keep mid-high frequencies as-is
+  } else {
+    return 1.5; // Boost high frequencies
+  }
+}
+
 function drawFrequencyLines() {
   if (frequencyData.length === 0) return;
   
@@ -399,11 +485,11 @@ function drawFrequencyLines() {
 }
 
 function drawSeparateBands(margin, plotWidth) {
-  let plotHeight = (height - 2 * margin - 80) / numBands;
+  let plotHeight = (height - 2 * margin - 120) / numBands;
   
   // Draw axes and grid
   stroke(0);
-  strokeWeight(2);
+  strokeWeight(3);
   line(margin, height - margin, width - margin, height - margin); // X-axis
   line(margin, margin, margin, height - margin); // Y-axis
   
@@ -412,7 +498,7 @@ function drawSeparateBands(margin, plotWidth) {
   
   // Draw amplitude labels and sections for each band
   textAlign(RIGHT, CENTER);
-  textSize(9);
+  textSize(14);
   
   for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
     let sectionY = margin + bandIndex * plotHeight;
@@ -433,7 +519,7 @@ function drawSeparateBands(margin, plotWidth) {
     // Draw frequency line
     if (frequencyData.length > 1) {
       stroke(band.color[0], band.color[1], band.color[2]);
-      strokeWeight(2);
+      strokeWeight(3);
       noFill();
       
       beginShape();
@@ -449,11 +535,11 @@ function drawSeparateBands(margin, plotWidth) {
 }
 
 function drawOverlayMode(margin, plotWidth) {
-  let plotHeight = height - 2 * margin - 80;
+  let plotHeight = height - 2 * margin - 120;
   
   // Draw axes and grid
   stroke(0);
-  strokeWeight(2);
+  strokeWeight(3);
   line(margin, height - margin, width - margin, height - margin); // X-axis
   line(margin, margin, margin, height - margin); // Y-axis
   
@@ -462,7 +548,7 @@ function drawOverlayMode(margin, plotWidth) {
   
   // Draw amplitude grid lines
   stroke(200);
-  strokeWeight(0.5);
+  strokeWeight(1);
   for (let i = 0; i <= 10; i++) {
     let y = map(i, 0, 10, height - margin, margin);
     line(margin, y, width - margin, y);
@@ -470,12 +556,12 @@ function drawOverlayMode(margin, plotWidth) {
   
   // Draw amplitude labels
   textAlign(RIGHT, CENTER);
-  textSize(9);
+  textSize(14);
   fill(0);
   for (let i = 0; i <= 10; i++) {
     let y = map(i, 0, 10, height - margin, margin);
     let amplitude = map(i, 0, 10, 0, 255);
-    text(Math.round(amplitude), margin - 10, y);
+    text(Math.round(amplitude), margin - 15, y);
   }
   
   // Draw legend
@@ -486,7 +572,7 @@ function drawOverlayMode(margin, plotWidth) {
     for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
       let band = frequencyBands[bandIndex];
       stroke(band.color[0], band.color[1], band.color[2]);
-      strokeWeight(2);
+      strokeWeight(3);
       noFill();
       
       beginShape();
@@ -503,7 +589,7 @@ function drawOverlayMode(margin, plotWidth) {
 
 function drawTimeLabels(margin) {
   textAlign(CENTER, TOP);
-  textSize(10);
+  textSize(16);
   fill(0);
   let maxTime = frequencyData.length > 0 ? 
     frequencyData[frequencyData.length - 1].time : 
@@ -512,42 +598,42 @@ function drawTimeLabels(margin) {
   for (let i = 0; i <= 10; i++) {
     let time = map(i, 0, 10, 0, maxTime);
     let x = map(i, 0, 10, margin, width - margin);
-    text(time.toFixed(1) + "s", x, height - margin + 10);
+    text(time.toFixed(1) + "s", x, height - margin + 15);
     
     stroke(200);
-    strokeWeight(0.5);
+    strokeWeight(1);
     line(x, margin, x, height - margin);
   }
 }
 
 function drawLegend(margin) {
   // Draw legend in top right
-  let legendX = width - margin - 150;
-  let legendY = margin + 20;
+  let legendX = width - margin - 200;
+  let legendY = margin + 30;
   
   textAlign(LEFT, CENTER);
-  textSize(10);
+  textSize(14);
   
   for (let i = 0; i < numBands; i++) {
     let band = frequencyBands[i];
-    let y = legendY + i * 15;
+    let y = legendY + i * 20;
     
     // Color line
     stroke(band.color[0], band.color[1], band.color[2]);
-    strokeWeight(3);
-    line(legendX, y, legendX + 20, y);
+    strokeWeight(4);
+    line(legendX, y, legendX + 30, y);
     
     // Label
     fill(0);
     noStroke();
-    text(`${band.min}-${band.max}Hz`, legendX + 25, y);
+    text(`${band.min}-${band.max}Hz`, legendX + 40, y);
   }
 }
 
 function drawUI() {
   fill(0);
   textAlign(LEFT, TOP);
-  textSize(12);
+  textSize(16);
   
   let info = [];
   if (song) {
@@ -561,9 +647,10 @@ function drawUI() {
   info.push(`Bands: ${numBands}`);
   info.push(`Smoothing: ${smoothingFrames} frames`);
   info.push(`Mode: ${overlayMode ? 'Overlay' : 'Separate'}`);
+  info.push(`Normalization: ${amplitudeNormalization ? 'ON' : 'OFF'}`);
   
   for (let i = 0; i < info.length; i++) {
-    text(info[i], 10, 85 + i * 15);
+    text(info[i], 20, 120 + i * 20);
   }
 }
 
@@ -581,13 +668,22 @@ function togglePlayAndRecord() {
     frequencyData = [];
     samplingCounter = 0;
     smoothingBuffer = []; // Reset smoothing buffer
+    amplitudeStats = { low: [], mid: [], high: [] }; // Reset normalization stats
     isRecording = true;
     song.play();
+    
+    // Set up automatic stop when song ends
+    song.onended(() => {
+      isRecording = false;
+      playButton.html("▶ Play & Record");
+      console.log("Recording completed - full song captured");
+    });
+    
     playButton.html("⏸ Stop & Pause");
     console.log("Started playing and recording");
   } else {
     isRecording = false;
-    song.pause();
+    song.stop(); // Use stop instead of pause to reset position
     playButton.html("▶ Play & Record");
     console.log("Stopped recording");
   }
