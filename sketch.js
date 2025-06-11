@@ -146,13 +146,15 @@ function createGUIPanel() {
   logarithmicToggle.style('margin-bottom', '15px');
   logarithmicToggle.style('font-weight', 'bold');
   logarithmicToggle.style('font-size', '14px');
+  logarithmicToggle.style('color', '#333');
   
-  // Radial mode toggle
+  // Radial mode toggle  
   radialToggle = createCheckbox('Radial visualization (circular)', radialMode);
   radialToggle.parent(guiPanel);
   radialToggle.style('margin-bottom', '30px');
   radialToggle.style('font-weight', 'bold');
   radialToggle.style('font-size', '14px');
+  radialToggle.style('color', '#333');
   
   // Create initial band controls
   createBandControls();
@@ -907,23 +909,41 @@ function exportSVG() {
     return;
   }
   
-  let svgContent = generateFrequencyLinesSVG();
+  let svgContent;
+  let filename;
+  
+  if (radialMode) {
+    svgContent = generateRadialSVG();
+    filename = overlayMode ? 'frequency-radial-overlay.svg' : 'frequency-radial-separate.svg';
+  } else {
+    svgContent = generateLinearSVG();
+    filename = overlayMode ? 'frequency-linear-overlay.svg' : 'frequency-linear-separate.svg';
+  }
+  
   let blob = new Blob([svgContent], { type: "image/svg+xml" });
   
   // Create download link
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'frequency-lines.svg';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   
-  console.log("SVG exported");
+  console.log(`SVG exported: ${filename}`);
 }
 
-function generateFrequencyLinesSVG() {
+function generateLinearSVG() {
+  if (overlayMode) {
+    return generateLinearOverlaySVG();
+  } else {
+    return generateLinearSeparateSVG();
+  }
+}
+
+function generateLinearSeparateSVG() {
   let margin = 80;
   let plotWidth = canvasWidth - 2 * margin;
   let plotHeight = (canvasHeight - 2 * margin - 80) / numBands;
@@ -996,6 +1016,292 @@ function generateFrequencyLinesSVG() {
   }
   
   svg += `
+</svg>`;
+  
+  return svg;
+}
+
+function generateLinearOverlaySVG() {
+  let margin = 80;
+  let plotWidth = canvasWidth - 2 * margin;
+  let plotHeight = canvasHeight - 2 * margin - 120;
+  
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .axis { stroke: black; stroke-width: 3; }
+    .grid { stroke: #cccccc; stroke-width: 1; }
+    .label { font-family: Arial, sans-serif; font-size: 16px; fill: black; }`;
+  
+  // Generate CSS classes for each band
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    svg += `
+    .band-${i} { stroke: rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]}); stroke-width: 3; fill: none; }`;
+  }
+  
+  svg += `
+  </style>
+  
+  <!-- Background -->
+  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  
+  <!-- Axes -->
+  <line x1="${margin}" y1="${canvasHeight - margin}" x2="${canvasWidth - margin}" y2="${canvasHeight - margin}" class="axis"/>
+  <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${canvasHeight - margin}" class="axis"/>
+  
+  <!-- Time labels and grid -->`;
+  
+  let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
+  for (let i = 0; i <= 10; i++) {
+    let time = map(i, 0, 10, 0, maxTime);
+    let x = map(i, 0, 10, margin, canvasWidth - margin);
+    svg += `
+  <line x1="${x}" y1="${margin}" x2="${x}" y2="${canvasHeight - margin}" class="grid"/>
+  <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+  }
+  
+  // Amplitude grid and labels
+  for (let i = 0; i <= 10; i++) {
+    let y = map(i, 0, 10, canvasHeight - margin, margin);
+    let amplitude = map(i, 0, 10, 0, 255);
+    svg += `
+  <line x1="${margin}" y1="${y}" x2="${canvasWidth - margin}" y2="${y}" class="grid"/>
+  <text x="${margin - 20}" y="${y + 5}" text-anchor="end" class="label">${Math.round(amplitude)}</text>`;
+  }
+  
+  // Legend
+  let legendX = canvasWidth - margin - 200;
+  let legendY = margin + 30;
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let y = legendY + i * 25;
+    svg += `
+  <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
+  <text x="${legendX + 40}" y="${y + 5}" class="label">${band.min}-${band.max}Hz</text>`;
+  }
+  
+  // Frequency lines (all overlaid)
+  if (frequencyData.length > 1) {
+    for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      svg += `
+  <polyline class="band-${bandIndex}" points="`;
+      
+      for (let i = 0; i < frequencyData.length; i++) {
+        let x = map(i, 0, frequencyData.length - 1, margin, canvasWidth - margin);
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
+        let y = map(amplitude, 0, 255, canvasHeight - margin, margin);
+        svg += `${x},${y} `;
+      }
+      
+      svg += `"/>`;
+    }
+  }
+  
+  svg += `
+</svg>`;
+  
+  return svg;
+}
+
+function generateRadialSVG() {
+  if (overlayMode) {
+    return generateRadialOverlaySVG();
+  } else {
+    return generateRadialSeparateSVG();
+  }
+}
+
+function generateRadialOverlaySVG() {
+  let centerX = canvasWidth / 2;
+  let centerY = canvasHeight / 2;
+  let maxRadius = min(canvasWidth, canvasHeight) / 2 - 100;
+  let baseRadius = 50;
+  
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
+    .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
+    .center { fill: black; }`;
+  
+  // Generate CSS classes for each band
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    svg += `
+    .band-${i} { stroke: rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]}); stroke-width: 3; fill: none; }`;
+  }
+  
+  svg += `
+  </style>
+  
+  <!-- Background -->
+  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  
+  <!-- Reference circles -->`;
+  
+  for (let i = 1; i <= 5; i++) {
+    let radius = baseRadius + (maxRadius - baseRadius) * (i / 5);
+    svg += `
+  <circle cx="${centerX}" cy="${centerY}" r="${radius}" class="axis"/>`;
+  }
+  
+  // Time markers
+  let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
+  for (let i = 0; i < 12; i++) {
+    let angle = map(i, 0, 12, 0, 360) - 90;
+    let markRadius = maxRadius + 20;
+    let x = centerX + cos(radians(angle)) * markRadius;
+    let y = centerY + sin(radians(angle)) * markRadius;
+    let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
+    svg += `
+  <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
+  }
+  
+  // Legend
+  let legendX = centerX - maxRadius - 100;
+  let legendY = centerY - (numBands * 25) / 2;
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let y = legendY + i * 25;
+    svg += `
+  <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
+  <text x="${legendX + 40}" y="${y + 5}" font-family="Arial" font-size="14" fill="black">${band.min}-${band.max}Hz</text>`;
+  }
+  
+  // Radial frequency lines
+  if (frequencyData.length > 1) {
+    for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      svg += `
+  <polygon class="band-${bandIndex}" points="`;
+      
+      for (let i = 0; i < frequencyData.length; i++) {
+        let angle = map(i, 0, frequencyData.length - 1, 0, 360) - 90;
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
+        let radius = map(amplitude, 0, 255, baseRadius, maxRadius);
+        let x = centerX + cos(radians(angle)) * radius;
+        let y = centerY + sin(radians(angle)) * radius;
+        svg += `${x},${y} `;
+      }
+      
+      // Close the shape
+      if (frequencyData.length > 0) {
+        let amplitude = frequencyData[0].bands[bandIndex] || 0;
+        let radius = map(amplitude, 0, 255, baseRadius, maxRadius);
+        let x = centerX + cos(radians(-90)) * radius;
+        let y = centerY + sin(radians(-90)) * radius;
+        svg += `${x},${y}`;
+      }
+      
+      svg += `"/>`;
+    }
+  }
+  
+  // Center point
+  svg += `
+  <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  
+</svg>`;
+  
+  return svg;
+}
+
+function generateRadialSeparateSVG() {
+  let centerX = canvasWidth / 2;
+  let centerY = canvasHeight / 2;
+  let maxRadius = min(canvasWidth, canvasHeight) / 2 - 100;
+  let baseRadius = 50;
+  let radiusStep = (maxRadius - baseRadius) / numBands;
+  
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
+    .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
+    .center { fill: black; }`;
+  
+  // Generate CSS classes for each band
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    svg += `
+    .band-${i} { stroke: rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]}); stroke-width: 2; fill: none; }`;
+  }
+  
+  svg += `
+  </style>
+  
+  <!-- Background -->
+  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  
+  <!-- Reference circles for each band -->`;
+  
+  for (let i = 0; i < numBands; i++) {
+    let bandBaseRadius = baseRadius + i * radiusStep;
+    let bandMaxRadius = baseRadius + (i + 1) * radiusStep;
+    svg += `
+  <circle cx="${centerX}" cy="${centerY}" r="${bandBaseRadius}" class="axis"/>
+  <circle cx="${centerX}" cy="${centerY}" r="${bandMaxRadius}" class="axis"/>`;
+  }
+  
+  // Time markers
+  let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
+  for (let i = 0; i < 12; i++) {
+    let angle = map(i, 0, 12, 0, 360) - 90;
+    let markRadius = maxRadius + 20;
+    let x = centerX + cos(radians(angle)) * markRadius;
+    let y = centerY + sin(radians(angle)) * markRadius;
+    let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
+    svg += `
+  <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
+  }
+  
+  // Band labels
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let bandBaseRadius = baseRadius + i * radiusStep;
+    let bandMaxRadius = baseRadius + (i + 1) * radiusStep;
+    let labelRadius = (bandBaseRadius + bandMaxRadius) / 2;
+    let labelX = centerX + labelRadius + 10;
+    let labelY = centerY + i * 20 - (numBands * 20) / 2;
+    svg += `
+  <text x="${labelX}" y="${labelY}" font-family="Arial" font-size="12" fill="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})">${band.min}-${band.max}Hz</text>`;
+  }
+  
+  // Radial frequency lines (separate rings)
+  if (frequencyData.length > 1) {
+    for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      let bandBaseRadius = baseRadius + bandIndex * radiusStep;
+      let bandMaxRadius = baseRadius + (bandIndex + 1) * radiusStep;
+      
+      svg += `
+  <polygon class="band-${bandIndex}" points="`;
+      
+      for (let i = 0; i < frequencyData.length; i++) {
+        let angle = map(i, 0, frequencyData.length - 1, 0, 360) - 90;
+        let amplitude = frequencyData[i].bands[bandIndex] || 0;
+        let radius = map(amplitude, 0, 255, bandBaseRadius, bandMaxRadius);
+        let x = centerX + cos(radians(angle)) * radius;
+        let y = centerY + sin(radians(angle)) * radius;
+        svg += `${x},${y} `;
+      }
+      
+      // Close the shape
+      if (frequencyData.length > 0) {
+        let amplitude = frequencyData[0].bands[bandIndex] || 0;
+        let radius = map(amplitude, 0, 255, bandBaseRadius, bandMaxRadius);
+        let x = centerX + cos(radians(-90)) * radius;
+        let y = centerY + sin(radians(-90)) * radius;
+        svg += `${x},${y}`;
+      }
+      
+      svg += `"/>`;
+    }
+  }
+  
+  // Center point
+  svg += `
+  <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  
 </svg>`;
   
   return svg;
