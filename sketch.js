@@ -23,6 +23,7 @@ let amplitudeNormalization = true;
 let amplitudeStats = { low: [], mid: [], high: [] };
 let logarithmicScaling = false;
 let radialMode = false;
+let currentSongName = "unknown_song";
 
 // GUI elements
 let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
@@ -32,6 +33,7 @@ let guiPanel;
 
 function preload() {
   song = loadSound('musicfiles/02 Break.m4a', loaded);
+  currentSongName = "02_Break";
 }
 
 function setup() {
@@ -295,7 +297,10 @@ function handleFile(file) {
     frequencyData = [];
     smoothingBuffer = [];
     amplitudeStats = { low: [], mid: [], high: [] };
-    console.log("New audio file loaded");
+    
+    // Extract filename for use in SVG export
+    currentSongName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    console.log("New audio file loaded:", currentSongName);
   }
 }
 
@@ -531,6 +536,37 @@ function applyLogarithmicScaling(dataPoint) {
   return scaledPoint;
 }
 
+function generateMetadata() {
+  let timestamp = new Date().toISOString();
+  let metadata = `
+  <!-- Settings Metadata -->
+  <metadata>
+    <song>${currentSongName}</song>
+    <timestamp>${timestamp}</timestamp>
+    <mode>${radialMode ? 'radial' : 'linear'}</mode>
+    <overlay>${overlayMode}</overlay>
+    <bands>${numBands}</bands>
+    <samplingRate>${samplingSlider.value()}</samplingRate>
+    <smoothingFrames>${smoothingFrames}</smoothingFrames>
+    <amplitudeNormalization>${amplitudeNormalization}</amplitudeNormalization>
+    <logarithmicScaling>${logarithmicScaling}</logarithmicScaling>
+    <frequencyBands>`;
+  
+  for (let i = 0; i < frequencyBands.length; i++) {
+    let band = frequencyBands[i];
+    metadata += `
+      <band${i + 1} min="${band.min}" max="${band.max}" scale="${band.scale}" color="${band.color[0]},${band.color[1]},${band.color[2]}"/>`;
+  }
+  
+  metadata += `
+    </frequencyBands>
+    <dataPoints>${frequencyData.length}</dataPoints>
+    <canvasSize width="${canvasWidth}" height="${canvasHeight}"/>
+  </metadata>`;
+  
+  return metadata;
+}
+
 function drawRadialVisualization() {
   if (frequencyData.length === 0) return;
   
@@ -660,8 +696,8 @@ function drawRadialSeparate(centerX, centerY, baseRadius, maxRadius) {
 }
 
 function drawRadialLegend(centerX, centerY, maxRadius) {
-  // Draw legend for overlay mode
-  let legendX = centerX - maxRadius - 100;
+  // Draw legend for overlay mode - moved further left to avoid overlap
+  let legendX = centerX - maxRadius - 180;
   let legendY = centerY - (numBands * 20) / 2;
   
   textAlign(LEFT, CENTER);
@@ -910,14 +946,14 @@ function exportSVG() {
   }
   
   let svgContent;
-  let filename;
+  let modeStr = radialMode ? 'radial' : 'linear';
+  let overlayStr = overlayMode ? 'overlay' : 'separate';
+  let filename = `${currentSongName}_${modeStr}_${overlayStr}.svg`;
   
   if (radialMode) {
     svgContent = generateRadialSVG();
-    filename = overlayMode ? 'frequency-radial-overlay.svg' : 'frequency-radial-separate.svg';
   } else {
     svgContent = generateLinearSVG();
-    filename = overlayMode ? 'frequency-linear-overlay.svg' : 'frequency-linear-separate.svg';
   }
   
   let blob = new Blob([svgContent], { type: "image/svg+xml" });
@@ -950,6 +986,7 @@ function generateLinearSeparateSVG() {
   
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  ${generateMetadata()}
   <style>
     .axis { stroke: black; stroke-width: 2; }
     .grid { stroke: #cccccc; stroke-width: 0.5; }
@@ -1028,6 +1065,7 @@ function generateLinearOverlaySVG() {
   
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  ${generateMetadata()}
   <style>
     .axis { stroke: black; stroke-width: 3; }
     .grid { stroke: #cccccc; stroke-width: 1; }
@@ -1120,6 +1158,7 @@ function generateRadialOverlaySVG() {
   
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  ${generateMetadata()}
   <style>
     .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
     .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
@@ -1158,8 +1197,8 @@ function generateRadialOverlaySVG() {
   <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
   }
   
-  // Legend
-  let legendX = centerX - maxRadius - 100;
+  // Legend - moved further left to avoid overlap
+  let legendX = centerX - maxRadius - 180;
   let legendY = centerY - (numBands * 25) / 2;
   for (let i = 0; i < numBands; i++) {
     let band = frequencyBands[i];
@@ -1215,6 +1254,7 @@ function generateRadialSeparateSVG() {
   
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+  ${generateMetadata()}
   <style>
     .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
     .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
