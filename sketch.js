@@ -21,9 +21,12 @@ let smoothingBuffer = [];
 let overlayMode = false;
 let amplitudeNormalization = true;
 let amplitudeStats = { low: [], mid: [], high: [] };
+let logarithmicScaling = false;
+let radialMode = false;
 
 // GUI elements
 let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
+let logarithmicToggle, radialToggle;
 let bandControls = [];
 let guiPanel;
 
@@ -133,9 +136,23 @@ function createGUIPanel() {
   // Normalization toggle
   normalizationToggle = createCheckbox('Normalize amplitude across bands', amplitudeNormalization);
   normalizationToggle.parent(guiPanel);
-  normalizationToggle.style('margin-bottom', '30px');
+  normalizationToggle.style('margin-bottom', '15px');
   normalizationToggle.style('font-weight', 'bold');
   normalizationToggle.style('font-size', '14px');
+  
+  // Logarithmic scaling toggle
+  logarithmicToggle = createCheckbox('Logarithmic frequency scaling', logarithmicScaling);
+  logarithmicToggle.parent(guiPanel);
+  logarithmicToggle.style('margin-bottom', '15px');
+  logarithmicToggle.style('font-weight', 'bold');
+  logarithmicToggle.style('font-size', '14px');
+  
+  // Radial mode toggle
+  radialToggle = createCheckbox('Radial visualization (circular)', radialMode);
+  radialToggle.parent(guiPanel);
+  radialToggle.style('margin-bottom', '30px');
+  radialToggle.style('font-weight', 'bold');
+  radialToggle.style('font-size', '14px');
   
   // Create initial band controls
   createBandControls();
@@ -275,6 +292,7 @@ function handleFile(file) {
     song = loadSound(file.data, loaded);
     frequencyData = [];
     smoothingBuffer = [];
+    amplitudeStats = { low: [], mid: [], high: [] };
     console.log("New audio file loaded");
   }
 }
@@ -289,6 +307,8 @@ function draw() {
   smoothingFrames = smoothingSlider.value();
   overlayMode = overlayToggle.checked();
   amplitudeNormalization = normalizationToggle.checked();
+  logarithmicScaling = logarithmicToggle.checked();
+  radialMode = radialToggle.checked();
   
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
@@ -307,6 +327,11 @@ function draw() {
         dataPoint = normalizeAmplitudes(dataPoint);
       }
       
+      // Apply logarithmic scaling if enabled
+      if (logarithmicScaling) {
+        dataPoint = applyLogarithmicScaling(dataPoint);
+      }
+      
       frequencyData.push(dataPoint);
       samplingCounter = 0;
     }
@@ -319,8 +344,12 @@ function draw() {
     console.log("Recording completed - full song captured");
   }
   
-  // Draw the frequency lines
-  drawFrequencyLines();
+  // Draw the frequency visualization
+  if (radialMode) {
+    drawRadialVisualization();
+  } else {
+    drawFrequencyLines();
+  }
   
   // Draw UI info
   drawUI();
@@ -468,6 +497,187 @@ function getFrequencyWeight(bandIndex) {
     return 1.0; // Keep mid-high frequencies as-is
   } else {
     return 1.5; // Boost high frequencies
+  }
+}
+
+function applyLogarithmicScaling(dataPoint) {
+  if (!logarithmicScaling || dataPoint.bands.length === 0) {
+    return dataPoint;
+  }
+  
+  let scaledPoint = { time: dataPoint.time, bands: [] };
+  
+  for (let i = 0; i < dataPoint.bands.length; i++) {
+    let band = frequencyBands[i];
+    let centerFreq = (band.min + band.max) / 2;
+    
+    // Create logarithmic scaling curve based on frequency position
+    // Map frequency from 20Hz-20kHz to 0-1, then apply log curve
+    let freqNormalized = map(log(centerFreq), log(20), log(20000), 0, 1);
+    freqNormalized = constrain(freqNormalized, 0, 1);
+    
+    // Apply logarithmic curve - higher frequencies get more boost
+    let logScale = pow(freqNormalized, 0.5) * 2.0; // Curve shape adjustment
+    logScale = constrain(logScale, 0.2, 3.0); // Limit the scaling range
+    
+    let scaledAmplitude = dataPoint.bands[i] * logScale;
+    scaledAmplitude = constrain(scaledAmplitude, 0, 255);
+    
+    scaledPoint.bands.push(scaledAmplitude);
+  }
+  
+  return scaledPoint;
+}
+
+function drawRadialVisualization() {
+  if (frequencyData.length === 0) return;
+  
+  let centerX = width / 2;
+  let centerY = height / 2;
+  let maxRadius = min(width, height) / 2 - 100;
+  let baseRadius = 50;
+  
+  // Draw center and reference circles
+  stroke(200);
+  strokeWeight(1);
+  fill(0, 0, 0, 0);
+  
+  // Draw concentric circles for amplitude reference
+  for (let i = 1; i <= 5; i++) {
+    let radius = baseRadius + (maxRadius - baseRadius) * (i / 5);
+    circle(centerX, centerY, radius * 2);
+  }
+  
+  // Draw time markers (12 hour positions)
+  textAlign(CENTER, CENTER);
+  textSize(14);
+  fill(100);
+  for (let i = 0; i < 12; i++) {
+    let angle = map(i, 0, 12, 0, TWO_PI) - PI/2;
+    let markRadius = maxRadius + 20;
+    let x = centerX + cos(angle) * markRadius;
+    let y = centerY + sin(angle) * markRadius;
+    
+    let timeLabel = (frequencyData.length > 0) ? 
+      ((frequencyData[frequencyData.length - 1].time * i) / 12).toFixed(1) + "s" :
+      (i * 5) + "s";
+    text(timeLabel, x, y);
+  }
+  
+  // Draw frequency bands in radial pattern
+  if (frequencyData.length > 1) {
+    if (overlayMode) {
+      drawRadialOverlay(centerX, centerY, baseRadius, maxRadius);
+    } else {
+      drawRadialSeparate(centerX, centerY, baseRadius, maxRadius);
+    }
+  }
+  
+  // Draw center point
+  fill(0);
+  noStroke();
+  circle(centerX, centerY, 8);
+}
+
+function drawRadialOverlay(centerX, centerY, baseRadius, maxRadius) {
+  // All bands overlaid in the same circle
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let band = frequencyBands[bandIndex];
+    stroke(band.color[0], band.color[1], band.color[2]);
+    strokeWeight(3);
+    noFill();
+    
+    beginShape();
+    for (let i = 0; i < frequencyData.length; i++) {
+      let angle = map(i, 0, frequencyData.length - 1, 0, TWO_PI) - PI/2;
+      let amplitude = frequencyData[i].bands[bandIndex] || 0;
+      let radius = map(amplitude, 0, 255, baseRadius, maxRadius);
+      
+      let x = centerX + cos(angle) * radius;
+      let y = centerY + sin(angle) * radius;
+      vertex(x, y);
+    }
+    // Close the circle
+    if (frequencyData.length > 0) {
+      let amplitude = frequencyData[0].bands[bandIndex] || 0;
+      let radius = map(amplitude, 0, 255, baseRadius, maxRadius);
+      let x = centerX + cos(-PI/2) * radius;
+      let y = centerY + sin(-PI/2) * radius;
+      vertex(x, y);
+    }
+    endShape();
+  }
+  
+  // Draw legend
+  drawRadialLegend(centerX, centerY, maxRadius);
+}
+
+function drawRadialSeparate(centerX, centerY, baseRadius, maxRadius) {
+  // Each band in its own concentric ring
+  let radiusStep = (maxRadius - baseRadius) / numBands;
+  
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let band = frequencyBands[bandIndex];
+    let bandBaseRadius = baseRadius + bandIndex * radiusStep;
+    let bandMaxRadius = baseRadius + (bandIndex + 1) * radiusStep;
+    
+    stroke(band.color[0], band.color[1], band.color[2]);
+    strokeWeight(2);
+    noFill();
+    
+    beginShape();
+    for (let i = 0; i < frequencyData.length; i++) {
+      let angle = map(i, 0, frequencyData.length - 1, 0, TWO_PI) - PI/2;
+      let amplitude = frequencyData[i].bands[bandIndex] || 0;
+      let radius = map(amplitude, 0, 255, bandBaseRadius, bandMaxRadius);
+      
+      let x = centerX + cos(angle) * radius;
+      let y = centerY + sin(angle) * radius;
+      vertex(x, y);
+    }
+    // Close the circle
+    if (frequencyData.length > 0) {
+      let amplitude = frequencyData[0].bands[bandIndex] || 0;
+      let radius = map(amplitude, 0, 255, bandBaseRadius, bandMaxRadius);
+      let x = centerX + cos(-PI/2) * radius;
+      let y = centerY + sin(-PI/2) * radius;
+      vertex(x, y);
+    }
+    endShape();
+    
+    // Draw band label
+    textAlign(LEFT, CENTER);
+    textSize(12);
+    fill(band.color[0], band.color[1], band.color[2]);
+    noStroke();
+    let labelRadius = (bandBaseRadius + bandMaxRadius) / 2;
+    let labelX = centerX + labelRadius + 10;
+    let labelY = centerY + bandIndex * 15 - (numBands * 15) / 2;
+    text(`${band.min}-${band.max}Hz`, labelX, labelY);
+  }
+}
+
+function drawRadialLegend(centerX, centerY, maxRadius) {
+  // Draw legend for overlay mode
+  let legendX = centerX - maxRadius - 100;
+  let legendY = centerY - (numBands * 20) / 2;
+  
+  textAlign(LEFT, CENTER);
+  textSize(14);
+  
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let y = legendY + i * 20;
+    
+    // Color line
+    stroke(band.color[0], band.color[1], band.color[2]);
+    strokeWeight(4);
+    line(legendX, y, legendX + 30, y);
+    
+    // Label
+    fill(0);
+    noStroke();
+    text(`${band.min}-${band.max}Hz`, legendX + 40, y);
   }
 }
 
@@ -647,7 +857,9 @@ function drawUI() {
   info.push(`Bands: ${numBands}`);
   info.push(`Smoothing: ${smoothingFrames} frames`);
   info.push(`Mode: ${overlayMode ? 'Overlay' : 'Separate'}`);
+  info.push(`View: ${radialMode ? 'Radial' : 'Linear'}`);
   info.push(`Normalization: ${amplitudeNormalization ? 'ON' : 'OFF'}`);
+  info.push(`Log scaling: ${logarithmicScaling ? 'ON' : 'OFF'}`);
   
   for (let i = 0; i < info.length; i++) {
     text(info[i], 20, 120 + i * 20);
