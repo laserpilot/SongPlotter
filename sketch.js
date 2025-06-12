@@ -18,16 +18,24 @@ let samplingRate = 10;
 let samplingCounter = 0;
 let smoothingFrames = 3;
 let smoothingBuffer = [];
-let overlayMode = false;
+let overlayMode = true;
 let amplitudeNormalization = true;
 let amplitudeStats = { low: [], mid: [], high: [] };
-let logarithmicScaling = false;
+let logarithmicScaling = true;
 let radialMode = false;
 let currentSongName = "unknown_song";
+
+// Batch processing variables
+let batchMode = false;
+let batchFiles = [];
+let currentBatchIndex = 0;
+let batchProgress = "";
+let batchProcessing = false;
 
 // GUI elements
 let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
 let logarithmicToggle, radialToggle;
+let batchButton, batchFileInput;
 let bandControls = [];
 let guiPanel;
 
@@ -57,6 +65,21 @@ function setup() {
   fileInput = createFileInput(handleFile);
   fileInput.position(20, 70);
   fileInput.style('font-size', '14px');
+  
+  // Batch processing controls
+  batchButton = createButton("🗂️ Batch Process Folder");
+  batchButton.mousePressed(startBatchProcessing);
+  batchButton.position(20, 110);
+  batchButton.style('padding', '12px 18px');
+  batchButton.style('font-size', '16px');
+  batchButton.style('background-color', '#e74c3c');
+  batchButton.style('color', 'white');
+  
+  batchFileInput = createFileInput(handleBatchFiles);
+  batchFileInput.position(220, 110);
+  batchFileInput.style('font-size', '14px');
+  batchFileInput.attribute('multiple', true);
+  batchFileInput.attribute('accept', 'audio/*');
   
   // Create GUI panel
   createGUIPanel();
@@ -122,7 +145,7 @@ function createGUIPanel() {
   smoothingLabel.style('font-weight', 'bold');
   smoothingLabel.style('font-size', '14px');
   
-  smoothingSlider = createSlider(1, 10, smoothingFrames);
+  smoothingSlider = createSlider(1, 60, smoothingFrames);
   smoothingSlider.parent(guiPanel);
   smoothingSlider.style('width', '100%');
   smoothingSlider.style('height', '20px');
@@ -302,6 +325,133 @@ function handleFile(file) {
     currentSongName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
     console.log("New audio file loaded:", currentSongName);
   }
+}
+
+function handleBatchFiles(files) {
+  batchFiles = [];
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].type === 'audio') {
+      batchFiles.push(files[i]);
+    }
+  }
+  console.log(`${batchFiles.length} audio files selected for batch processing`);
+  batchProgress = `${batchFiles.length} files ready for batch processing`;
+}
+
+function startBatchProcessing() {
+  if (batchFiles.length === 0) {
+    console.log("No batch files selected. Please select audio files first.");
+    return;
+  }
+  
+  if (batchProcessing) {
+    console.log("Batch processing already in progress");
+    return;
+  }
+  
+  batchMode = true;
+  batchProcessing = true;
+  currentBatchIndex = 0;
+  batchProgress = "Starting batch processing...";
+  
+  console.log(`Starting batch processing of ${batchFiles.length} files`);
+  processBatchFile();
+}
+
+function processBatchFile() {
+  if (currentBatchIndex >= batchFiles.length) {
+    // Batch processing complete
+    batchMode = false;
+    batchProcessing = false;
+    batchProgress = `Batch processing complete! Processed ${batchFiles.length} files.`;
+    console.log("Batch processing completed");
+    return;
+  }
+  
+  let file = batchFiles[currentBatchIndex];
+  currentSongName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  batchProgress = `Processing ${currentBatchIndex + 1}/${batchFiles.length}: ${currentSongName}`;
+  
+  console.log(`Processing batch file ${currentBatchIndex + 1}/${batchFiles.length}: ${currentSongName}`);
+  
+  // Reset data for new file
+  frequencyData = [];
+  smoothingBuffer = [];
+  amplitudeStats = { low: [], mid: [], high: [] };
+  
+  // Load and process the file
+  song = loadSound(file.data, () => {
+    // Mute audio for batch processing
+    song.setVolume(0);
+    
+    // Start recording and playback
+    isRecording = true;
+    samplingCounter = 0;
+    song.play();
+    
+    // Set up completion handler
+    song.onended(() => {
+      isRecording = false;
+      
+      // Export both linear and radial versions
+      exportBatchFile();
+      
+      // Move to next file
+      currentBatchIndex++;
+      setTimeout(processBatchFile, 500); // Small delay between files
+    });
+  });
+}
+
+function exportBatchFile() {
+  if (frequencyData.length === 0) {
+    console.log("No data to export for batch file");
+    return;
+  }
+  
+  // Save current UI state
+  let originalRadialMode = radialMode;
+  let originalOverlayMode = overlayMode;
+  
+  // Export linear separate version
+  radialMode = false;
+  overlayMode = false;
+  let linearSeparateSVG = generateLinearSeparateSVG();
+  downloadSVG(linearSeparateSVG, `${currentSongName}_linear_separate.svg`);
+  
+  // Export linear overlay version
+  overlayMode = true;
+  let linearOverlaySVG = generateLinearOverlaySVG();
+  downloadSVG(linearOverlaySVG, `${currentSongName}_linear_overlay.svg`);
+  
+  // Export radial separate version
+  radialMode = true;
+  overlayMode = false;
+  let radialSeparateSVG = generateRadialSeparateSVG();
+  downloadSVG(radialSeparateSVG, `${currentSongName}_radial_separate.svg`);
+  
+  // Export radial overlay version
+  overlayMode = true;
+  let radialOverlaySVG = generateRadialOverlaySVG();
+  downloadSVG(radialOverlaySVG, `${currentSongName}_radial_overlay.svg`);
+  
+  // Restore original UI state
+  radialMode = originalRadialMode;
+  overlayMode = originalOverlayMode;
+  
+  console.log(`Exported 4 SVG files for ${currentSongName}`);
+}
+
+function downloadSVG(svgContent, filename) {
+  let blob = new Blob([svgContent], { type: "image/svg+xml" });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function draw() {
@@ -899,8 +1049,13 @@ function drawUI() {
   info.push(`Normalization: ${amplitudeNormalization ? 'ON' : 'OFF'}`);
   info.push(`Log scaling: ${logarithmicScaling ? 'ON' : 'OFF'}`);
   
+  // Add batch processing status
+  if (batchProcessing || batchProgress !== "") {
+    info.push(`Batch: ${batchProgress}`);
+  }
+  
   for (let i = 0; i < info.length; i++) {
-    text(info[i], 20, 120 + i * 20);
+    text(info[i], 20, 160 + i * 20);
   }
 }
 
@@ -909,6 +1064,12 @@ function mousePressed() {
 }
 
 function togglePlayAndRecord() {
+  // Don't allow manual playback during batch processing
+  if (batchProcessing) {
+    console.log("Cannot use manual controls during batch processing");
+    return;
+  }
+  
   if (!song) {
     console.log("No song loaded");
     return;
@@ -920,6 +1081,9 @@ function togglePlayAndRecord() {
     smoothingBuffer = []; // Reset smoothing buffer
     amplitudeStats = { low: [], mid: [], high: [] }; // Reset normalization stats
     isRecording = true;
+    
+    // Set normal volume for manual playback
+    song.setVolume(0.3);
     song.play();
     
     // Set up automatic stop when song ends
@@ -940,6 +1104,12 @@ function togglePlayAndRecord() {
 }
 
 function exportSVG() {
+  // Don't allow manual export during batch processing
+  if (batchProcessing) {
+    console.log("Cannot manually export during batch processing - files are auto-exported");
+    return;
+  }
+  
   if (frequencyData.length === 0) {
     console.log("No data to export");
     return;
@@ -956,18 +1126,7 @@ function exportSVG() {
     svgContent = generateLinearSVG();
   }
   
-  let blob = new Blob([svgContent], { type: "image/svg+xml" });
-  
-  // Create download link
-  let url = URL.createObjectURL(blob);
-  let a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  
+  downloadSVG(svgContent, filename);
   console.log(`SVG exported: ${filename}`);
 }
 
