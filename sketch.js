@@ -3,8 +3,8 @@ let fft;
 let frequencyData = [];
 let isRecording = false;
 let playButton, exportButton, fileInput;
-let canvasWidth = 2000;
-let canvasHeight = 1500;
+let canvasWidth = 1191*2;  // A3 landscape width
+let canvasHeight = 842*2;  // A3 landscape height
 let fftSize = 1024;
 
 // Dynamic frequency bands (3-8 bands)
@@ -12,7 +12,7 @@ let numBands = 3;
 let frequencyBands = [
   { min: 20, max: 250, scale: 1.0, color: [0, 0, 255] },     // Blue
   { min: 250, max: 4000, scale: 1.0, color: [0, 255, 0] },   // Green  
-  { min: 4000, max: 20000, scale: 1.0, color: [255, 0, 0] }  // Red
+  { min: 4000, max: 10000, scale: 1.0, color: [255, 0, 0] }  // Red
 ];
 let samplingRate = 10;
 let samplingCounter = 0;
@@ -22,8 +22,12 @@ let overlayMode = true;
 let amplitudeNormalization = true;
 let amplitudeStats = { low: [], mid: [], high: [] };
 let logarithmicScaling = true;
+let logarithmicIntensity = 0.5; // Controls the curve shape (0.1 to 1.0)
+let logarithmicMultiplier = 2.0; // Controls the overall scaling (0.5 to 4.0)
 let radialMode = false;
 let currentSongName = "unknown_song";
+let showGrid = true;
+let showLabels = true;
 
 // Batch processing variables
 let batchMode = false;
@@ -34,73 +38,224 @@ let batchProcessing = false;
 
 // GUI elements
 let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
-let logarithmicToggle, radialToggle;
-let batchButton, batchFileInput;
+let logarithmicToggle, logIntensitySlider, logMultiplierSlider, radialToggle;
+let batchButton, batchFileInput, muteButton, gridToggle, labelsToggle;
 let bandControls = [];
 let guiPanel;
+let audioMuted = false;
+
+// UI scaling based on canvas size
+let baseCanvasWidth = 1191;
+let baseCanvasHeight = 842;
+let uiScale = canvasWidth / baseCanvasWidth;
 
 function preload() {
   song = loadSound('musicfiles/02 Break.m4a', loaded);
-  currentSongName = "02_Break";
+  currentSongName = "[Need to load song]";
 }
 
 function setup() {
-  createCanvas(canvasWidth, canvasHeight);
+  let cnv = createCanvas(canvasWidth, canvasHeight);
+  cnv.position(20, 100);
   fft = new p5.FFT(0.8, fftSize);
   
-  // Create main UI elements
-  playButton = createButton("▶ Play & Record");
+  // Set initial UI scale
+  let availableWidth = windowWidth - 400;
+  let availableHeight = windowHeight - 120;
+  let scaleX = availableWidth / canvasWidth;
+  let scaleY = availableHeight / canvasHeight;
+  uiScale = min(scaleX, scaleY, 1.0);
+  
+  // Apply initial canvas scaling
+  cnv.style('transform', `scale(${uiScale})`);
+  cnv.style('transform-origin', 'top left');
+  
+  createCleanUI();
+  
+  console.log("Setup complete");
+  outputVolume(0.3);
+}
+
+function windowResized() {
+  // Update UI scale based on current window size vs canvas size
+  let availableWidth = windowWidth - 400; // Leave space for GUI panel
+  let availableHeight = windowHeight - 120; // Leave space for margins
+  
+  let scaleX = availableWidth / canvasWidth;
+  let scaleY = availableHeight / canvasHeight;
+  uiScale = min(scaleX, scaleY, 1.0); // Don't scale larger than original
+  
+  // Update canvas scale via CSS (visual scaling only)
+  let canvas = document.querySelector('canvas');
+  if (canvas) {
+    canvas.style.transform = `scale(${uiScale})`;
+    canvas.style.transformOrigin = 'top left';
+  }
+  
+  // Update GUI panel position without recreating everything
+  if (guiPanel) {
+    let canvasRect = canvas ? canvas.getBoundingClientRect() : {left: 20, top: 100};
+    guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
+    guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
+  }
+}
+
+function createCleanUI() {
+  // Create unified top bar with scaling
+  let topBar = createDiv('');
+  topBar.position(10, 10);
+  topBar.style('width', `${(canvasWidth * uiScale) - 60}px`);
+  topBar.style('height', '50px');
+  topBar.style('background-color', '#f8f8f8');
+  topBar.style('border', '2px solid #ddd');
+  topBar.style('border-radius', '8px');
+  topBar.style('padding', '15px');
+  topBar.style('display', 'flex');
+  topBar.style('gap', '15px');
+  topBar.style('align-items', 'center');
+  topBar.style('font-family', 'Arial, sans-serif');
+  topBar.style('font-size', '12px');
+  topBar.style('flex-wrap', 'wrap');
+  
+  // Buttons section
+  let buttonsSection = createDiv('');
+  buttonsSection.parent(topBar);
+  buttonsSection.style('display', 'flex');
+  buttonsSection.style('gap', '10px');
+  buttonsSection.style('align-items', 'center');
+  
+  playButton = createButton("▶ Play");
   playButton.mousePressed(togglePlayAndRecord);
-  playButton.position(20, 20);
-  playButton.style('padding', '12px 18px');
-  playButton.style('font-size', '16px');
+  playButton.parent(buttonsSection);
+  playButton.style('padding', '8px 12px');
+  playButton.style('font-size', '12px');
+  playButton.style('border-radius', '6px');
+  playButton.style('border', 'none');
+  playButton.style('background-color', '#2ecc71');
+  playButton.style('color', 'white');
+  playButton.style('cursor', 'pointer');
   
-  exportButton = createButton("📄 Export SVG");
+  muteButton = createButton(audioMuted ? "🔇 Unmute" : "🔊 Mute");
+  muteButton.mousePressed(toggleAudioMute);
+  muteButton.parent(buttonsSection);
+  muteButton.style('padding', '8px 12px');
+  muteButton.style('font-size', '12px');
+  muteButton.style('border-radius', '6px');
+  muteButton.style('border', 'none');
+  muteButton.style('background-color', audioMuted ? '#e74c3c' : '#27ae60');
+  muteButton.style('color', 'white');
+  muteButton.style('cursor', 'pointer');
+  
+  exportButton = createButton("📄 Export");
   exportButton.mousePressed(exportSVG);
-  exportButton.position(200, 20);
-  exportButton.style('padding', '12px 18px');
-  exportButton.style('font-size', '16px');
+  exportButton.parent(buttonsSection);
+  exportButton.style('padding', '8px 12px');
+  exportButton.style('font-size', '12px');
+  exportButton.style('border-radius', '6px');
+  exportButton.style('border', 'none');
+  exportButton.style('background-color', '#3498db');
+  exportButton.style('color', 'white');
+  exportButton.style('cursor', 'pointer');
   
-  // File input for loading audio files
-  fileInput = createFileInput(handleFile);
-  fileInput.position(20, 70);
-  fileInput.style('font-size', '14px');
-  
-  // Batch processing controls
-  batchButton = createButton("🗂️ Batch Process Folder");
+  batchButton = createButton("🗂️ Batch");
   batchButton.mousePressed(startBatchProcessing);
-  batchButton.position(20, 110);
-  batchButton.style('padding', '12px 18px');
-  batchButton.style('font-size', '16px');
+  batchButton.parent(buttonsSection);
+  batchButton.style('padding', '8px 12px');
+  batchButton.style('font-size', '12px');
+  batchButton.style('border-radius', '6px');
+  batchButton.style('border', 'none');
   batchButton.style('background-color', '#e74c3c');
   batchButton.style('color', 'white');
+  batchButton.style('cursor', 'pointer');
+  
+  // File inputs section
+  let filesSection = createDiv('');
+  filesSection.parent(topBar);
+  filesSection.style('display', 'flex');
+  filesSection.style('gap', '10px');
+  filesSection.style('align-items', 'center');
+  
+  let fileLabel = createElement('label', 'File:');
+  fileLabel.parent(filesSection);
+  fileLabel.style('font-weight', 'bold');
+  fileLabel.style('font-size', '12px');
+  
+  fileInput = createFileInput(handleFile);
+  fileInput.parent(filesSection);
+  fileInput.style('font-size', '11px');
+  
+  let batchLabel = createElement('label', 'Batch:');
+  batchLabel.parent(filesSection);
+  batchLabel.style('font-weight', 'bold');
+  batchLabel.style('font-size', '12px');
   
   batchFileInput = createFileInput(handleBatchFiles);
-  batchFileInput.position(220, 110);
-  batchFileInput.style('font-size', '14px');
+  batchFileInput.parent(filesSection);
+  batchFileInput.style('font-size', '11px');
   batchFileInput.attribute('multiple', true);
   batchFileInput.attribute('accept', 'audio/*');
   
-  // Create GUI panel
-  createGUIPanel();
+  // Playhead section
+  let playheadSection = createDiv('');
+  playheadSection.parent(topBar);
+  playheadSection.style('display', 'flex');
+  playheadSection.style('flex-direction', 'column');
+  playheadSection.style('gap', '5px');
+  playheadSection.style('min-width', '300px');
   
-  console.log("Setup complete");
-  if (song) song.setVolume(0.3);
+  // Status display
+  let statusDisplay = createDiv('Status: Loading...');
+  statusDisplay.parent(playheadSection);
+  statusDisplay.style('font-size', '10px');
+  statusDisplay.style('color', '#666');
+  statusDisplay.id('statusDisplay');
+  
+  // Playhead bar
+  let playheadContainer = createDiv('');
+  playheadContainer.parent(playheadSection);
+  playheadContainer.style('position', 'relative');
+  playheadContainer.style('height', '20px');
+  playheadContainer.style('width', '300px');
+  playheadContainer.style('background-color', '#ddd');
+  playheadContainer.style('border-radius', '4px');
+  playheadContainer.style('overflow', 'hidden');
+  
+  let playheadBar = createDiv('');
+  playheadBar.parent(playheadContainer);
+  playheadBar.style('height', '100%');
+  playheadBar.style('width', '0%');
+  playheadBar.style('background-color', '#3498db');
+  playheadBar.style('transition', 'width 0.1s ease');
+  playheadBar.id('playheadBar');
+  
+  // Time display
+  let timeDisplay = createDiv('0.0s / 0.0s');
+  timeDisplay.parent(playheadSection);
+  timeDisplay.style('font-size', '10px');
+  timeDisplay.style('color', '#666');
+  timeDisplay.id('timeDisplay');
+  
+  // Create compact GUI panel
+  createGUIPanel();
 }
 
 function createGUIPanel() {
-  // Create GUI panel div
+  // Create compact GUI panel div positioned relative to canvas
+  let canvas = document.querySelector('canvas');
+  let canvasRect = canvas ? canvas.getBoundingClientRect() : {left: 20, top: 100};
+  
   guiPanel = createDiv('');
-  guiPanel.position(canvasWidth + 30, 20);
-  guiPanel.style('width', '400px');
-  guiPanel.style('height', `${canvasHeight - 40}px`);
+  guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
+  guiPanel.style('width', '300px');
+  guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
   guiPanel.style('background-color', '#f8f8f8');
   guiPanel.style('border', '2px solid #ddd');
-  guiPanel.style('border-radius', '12px');
-  guiPanel.style('padding', '20px');
+  guiPanel.style('border-radius', '8px');
+  guiPanel.style('padding', '15px');
   guiPanel.style('font-family', 'Arial, sans-serif');
+  guiPanel.style('font-size', '12px');
   guiPanel.style('overflow-y', 'auto');
-  guiPanel.style('box-shadow', '0 4px 8px rgba(0,0,0,0.1)');
+  guiPanel.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
   
   // Number of bands control
   let title = createElement('h3', 'Frequency Band Controls');
@@ -109,14 +264,14 @@ function createGUIPanel() {
   title.style('color', '#333');
   title.style('font-size', '18px');
   
-  let bandsLabel = createElement('label', 'Number of Bands (3-8):');
+  let bandsLabel = createElement('label', 'Number of Bands (1-8):');
   bandsLabel.parent(guiPanel);
   bandsLabel.style('display', 'block');
   bandsLabel.style('margin-bottom', '8px');
   bandsLabel.style('font-weight', 'bold');
   bandsLabel.style('font-size', '14px');
   
-  numBandsSlider = createSlider(3, 8, numBands);
+  numBandsSlider = createSlider(1, 8, numBands);
   numBandsSlider.parent(guiPanel);
   numBandsSlider.style('width', '100%');
   numBandsSlider.style('height', '20px');
@@ -173,13 +328,57 @@ function createGUIPanel() {
   logarithmicToggle.style('font-size', '14px');
   logarithmicToggle.style('color', '#333');
   
+  // Logarithmic intensity control
+  let logIntensityLabel = createElement('label', 'Log Curve Intensity (0.1-1.0):');
+  logIntensityLabel.parent(guiPanel);
+  logIntensityLabel.style('display', 'block');
+  logIntensityLabel.style('margin-bottom', '8px');
+  logIntensityLabel.style('font-weight', 'bold');
+  logIntensityLabel.style('font-size', '14px');
+  
+  logIntensitySlider = createSlider(0.1, 1.0, logarithmicIntensity, 0.1);
+  logIntensitySlider.parent(guiPanel);
+  logIntensitySlider.style('width', '100%');
+  logIntensitySlider.style('height', '20px');
+  logIntensitySlider.style('margin-bottom', '20px');
+  
+  // Logarithmic multiplier control
+  let logMultiplierLabel = createElement('label', 'Log Scale Multiplier (0.5-4.0):');
+  logMultiplierLabel.parent(guiPanel);
+  logMultiplierLabel.style('display', 'block');
+  logMultiplierLabel.style('margin-bottom', '8px');
+  logMultiplierLabel.style('font-weight', 'bold');
+  logMultiplierLabel.style('font-size', '14px');
+  
+  logMultiplierSlider = createSlider(0.5, 4.0, logarithmicMultiplier, 0.1);
+  logMultiplierSlider.parent(guiPanel);
+  logMultiplierSlider.style('width', '100%');
+  logMultiplierSlider.style('height', '20px');
+  logMultiplierSlider.style('margin-bottom', '20px');
+  
   // Radial mode toggle  
   radialToggle = createCheckbox('Radial visualization (circular)', radialMode);
   radialToggle.parent(guiPanel);
-  radialToggle.style('margin-bottom', '30px');
+  radialToggle.style('margin-bottom', '15px');
   radialToggle.style('font-weight', 'bold');
   radialToggle.style('font-size', '14px');
   radialToggle.style('color', '#333');
+  
+  // Grid visibility toggle
+  gridToggle = createCheckbox('Show grid lines', showGrid);
+  gridToggle.parent(guiPanel);
+  gridToggle.style('margin-bottom', '15px');
+  gridToggle.style('font-weight', 'bold');
+  gridToggle.style('font-size', '14px');
+  gridToggle.style('color', '#333');
+  
+  // Labels visibility toggle
+  labelsToggle = createCheckbox('Show text labels', showLabels);
+  labelsToggle.parent(guiPanel);
+  labelsToggle.style('margin-bottom', '30px');
+  labelsToggle.style('font-weight', 'bold');
+  labelsToggle.style('font-size', '14px');
+  labelsToggle.style('color', '#333');
   
   // Create initial band controls
   createBandControls();
@@ -209,7 +408,7 @@ function updateFrequencyBands() {
   
   frequencyBands = [];
   let minFreq = 20;
-  let maxFreq = 20000;
+  let maxFreq = 10000;
   let logMin = Math.log10(minFreq);
   let logMax = Math.log10(maxFreq);
   
@@ -218,8 +417,8 @@ function updateFrequencyBands() {
     let logEnd = logMin + ((i + 1) / numBands) * (logMax - logMin);
     
     frequencyBands.push({
-      min: Math.round(Math.pow(10, logStart)),
-      max: Math.round(Math.pow(10, logEnd)),
+      min: Math.round(Math.pow(9, logStart)),
+      max: Math.round(Math.pow(9, logEnd)),
       scale: 1.0,
       color: colors[i % colors.length]
     });
@@ -311,7 +510,7 @@ function createBandControls() {
 
 function loaded() {
   console.log("Song loaded");
-  if (song) song.setVolume(0.3);
+  outputVolume(0.3);
 }
 
 function handleFile(file) {
@@ -381,8 +580,8 @@ function processBatchFile() {
   
   // Load and process the file
   song = loadSound(file.data, () => {
-    // Mute audio for batch processing
-    song.setVolume(0);
+    // Set output volume based on mute state (preserves FFT analysis)
+    outputVolume(audioMuted ? 0 : 0.3);
     
     // Start recording and playback
     isRecording = true;
@@ -465,7 +664,11 @@ function draw() {
   overlayMode = overlayToggle.checked();
   amplitudeNormalization = normalizationToggle.checked();
   logarithmicScaling = logarithmicToggle.checked();
+  logarithmicIntensity = logIntensitySlider.value();
+  logarithmicMultiplier = logMultiplierSlider.value();
   radialMode = radialToggle.checked();
+  showGrid = gridToggle.checked();
+  showLabels = labelsToggle.checked();
   
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
@@ -507,6 +710,10 @@ function draw() {
   } else {
     drawFrequencyLines();
   }
+  
+  // Update DOM-based UI elements
+  updateDOMStatus();
+  updateDOMPlayhead();
   
   // Draw UI info
   drawUI();
@@ -674,7 +881,7 @@ function applyLogarithmicScaling(dataPoint) {
     freqNormalized = constrain(freqNormalized, 0, 1);
     
     // Apply logarithmic curve - higher frequencies get more boost
-    let logScale = pow(freqNormalized, 0.5) * 2.0; // Curve shape adjustment
+    let logScale = pow(freqNormalized, logarithmicIntensity) * logarithmicMultiplier;
     logScale = constrain(logScale, 0.2, 3.0); // Limit the scaling range
     
     let scaledAmplitude = dataPoint.bands[i] * logScale;
@@ -700,6 +907,8 @@ function generateMetadata() {
     <smoothingFrames>${smoothingFrames}</smoothingFrames>
     <amplitudeNormalization>${amplitudeNormalization}</amplitudeNormalization>
     <logarithmicScaling>${logarithmicScaling}</logarithmicScaling>
+    <logarithmicIntensity>${logarithmicIntensity}</logarithmicIntensity>
+    <logarithmicMultiplier>${logarithmicMultiplier}</logarithmicMultiplier>
     <frequencyBands>`;
   
   for (let i = 0; i < frequencyBands.length; i++) {
@@ -721,9 +930,9 @@ function drawRadialVisualization() {
   if (frequencyData.length === 0) return;
   
   let centerX = width / 2;
-  let centerY = height / 2;
-  let maxRadius = min(width, height) / 2 - 100;
-  let baseRadius = 50;
+  let centerY = (height + 120) / 2; // Account for top bar
+  let maxRadius = min(width, height - 120) / 2 - 80;
+  let baseRadius = 40;
   
   // Draw center and reference circles
   stroke(200);
@@ -872,46 +1081,58 @@ function drawRadialLegend(centerX, centerY, maxRadius) {
 function drawFrequencyLines() {
   if (frequencyData.length === 0) return;
   
-  let margin = 80;
-  let plotWidth = width - 2 * margin;
+  let topMargin = 50; // Space for top bar
+  let sideMargin = 60;
+  let plotWidth = width - 2 * sideMargin;
   
   if (overlayMode) {
-    drawOverlayMode(margin, plotWidth);
+    drawOverlayMode(sideMargin, topMargin, plotWidth);
   } else {
-    drawSeparateBands(margin, plotWidth);
+    drawSeparateBands(sideMargin, topMargin, plotWidth);
   }
 }
 
-function drawSeparateBands(margin, plotWidth) {
-  let plotHeight = (height - 2 * margin - 120) / numBands;
+function drawSeparateBands(sideMargin, topMargin, plotWidth) {
+  let bottomMargin = 120; // More space for legend below
+  let plotHeight = (height - topMargin - bottomMargin) / numBands;
   
-  // Draw axes and grid
-  stroke(0);
-  strokeWeight(3);
-  line(margin, height - margin, width - margin, height - margin); // X-axis
-  line(margin, margin, margin, height - margin); // Y-axis
+  // Draw axes
+  if (showGrid) {
+    stroke(0);
+    strokeWeight(3);
+    line(sideMargin, height - bottomMargin, width - sideMargin, height - bottomMargin); // X-axis
+    line(sideMargin, topMargin, sideMargin, height - bottomMargin); // Y-axis
+  }
   
   // Draw time labels
-  drawTimeLabels(margin);
+  if (showLabels) {
+    drawTimeLabels(sideMargin, topMargin, bottomMargin);
+  }
   
   // Draw amplitude labels and sections for each band
-  textAlign(RIGHT, CENTER);
-  textSize(14);
+  if (showLabels) {
+    textAlign(RIGHT, CENTER);
+    textSize(14);
+  }
   
   for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
-    let sectionY = margin + bandIndex * plotHeight;
+    let sectionY = topMargin + bandIndex * plotHeight;
     let band = frequencyBands[bandIndex];
     
     // Section label
-    fill(0);
-    text(`${band.min}-${band.max}Hz`, margin - 10, sectionY + plotHeight / 2);
+    if (showLabels) {
+      fill(0);
+      text(`${band.min}-${band.max}Hz`, sideMargin - 10, sectionY + plotHeight / 2);
+    }
     
     // Grid lines
-    stroke(200);
-    strokeWeight(0.5);
-    line(margin, sectionY, width - margin, sectionY);
-    if (bandIndex === numBands - 1) {
-      line(margin, sectionY + plotHeight, width - margin, sectionY + plotHeight);
+    if (showGrid) {
+      stroke(200);
+      strokeWeight(0.5);
+      line(sideMargin, sectionY, width - sideMargin, sectionY);
+      if (bandIndex === numBands - 1) {
+        line(sideMargin, sectionY + plotHeight, width - sideMargin, sectionY + plotHeight);
+      }
     }
     
     // Draw frequency line
@@ -922,7 +1143,7 @@ function drawSeparateBands(margin, plotWidth) {
       
       beginShape();
       for (let i = 0; i < frequencyData.length; i++) {
-        let x = map(i, 0, frequencyData.length - 1, margin, width - margin);
+        let x = map(i, 0, frequencyData.length - 1, sideMargin, width - sideMargin);
         let amplitude = frequencyData[i].bands[bandIndex] || 0;
         let y = map(amplitude, 0, 255, sectionY + plotHeight, sectionY);
         vertex(x, y);
@@ -930,40 +1151,49 @@ function drawSeparateBands(margin, plotWidth) {
       endShape();
     }
   }
+  
+  // Draw legend below the graph
+  drawLegendBelow(sideMargin, height  );
 }
 
-function drawOverlayMode(margin, plotWidth) {
-  let plotHeight = height - 2 * margin - 120;
+function drawOverlayMode(sideMargin, topMargin, plotWidth) {
+  let bottomMargin = 120; // More space for legend below
+  let plotHeight = height - topMargin - bottomMargin;
   
-  // Draw axes and grid
-  stroke(0);
-  strokeWeight(3);
-  line(margin, height - margin, width - margin, height - margin); // X-axis
-  line(margin, margin, margin, height - margin); // Y-axis
+  // Draw axes
+  if (showGrid) {
+    stroke(0);
+    strokeWeight(3);
+    line(sideMargin, height - bottomMargin, width - sideMargin, height - bottomMargin); // X-axis
+    line(sideMargin, topMargin, sideMargin, height - bottomMargin); // Y-axis
+  }
   
   // Draw time labels
-  drawTimeLabels(margin);
+  if (showLabels) {
+    drawTimeLabels(sideMargin, topMargin, bottomMargin);
+  }
   
   // Draw amplitude grid lines
-  stroke(200);
-  strokeWeight(1);
-  for (let i = 0; i <= 10; i++) {
-    let y = map(i, 0, 10, height - margin, margin);
-    line(margin, y, width - margin, y);
+  if (showGrid) {
+    stroke(200);
+    strokeWeight(1);
+    for (let i = 0; i <= 10; i++) {
+      let y = map(i, 0, 10, height - bottomMargin, topMargin);
+      line(sideMargin, y, width - sideMargin, y);
+    }
   }
   
   // Draw amplitude labels
-  textAlign(RIGHT, CENTER);
-  textSize(14);
-  fill(0);
-  for (let i = 0; i <= 10; i++) {
-    let y = map(i, 0, 10, height - margin, margin);
-    let amplitude = map(i, 0, 10, 0, 255);
-    text(Math.round(amplitude), margin - 15, y);
+  if (showLabels) {
+    textAlign(RIGHT, CENTER);
+    textSize(14);
+    fill(0);
+    for (let i = 0; i <= 10; i++) {
+      let y = map(i, 0, 10, height - bottomMargin, topMargin);
+      let amplitude = map(i, 0, 10, 0, 255);
+      text(Math.round(amplitude), sideMargin - 15, y);
+    }
   }
-  
-  // Draw legend
-  drawLegend(margin);
   
   // Draw all frequency lines overlaid
   if (frequencyData.length > 1) {
@@ -975,19 +1205,22 @@ function drawOverlayMode(margin, plotWidth) {
       
       beginShape();
       for (let i = 0; i < frequencyData.length; i++) {
-        let x = map(i, 0, frequencyData.length - 1, margin, width - margin);
+        let x = map(i, 0, frequencyData.length - 1, sideMargin, width - sideMargin);
         let amplitude = frequencyData[i].bands[bandIndex] || 0;
-        let y = map(amplitude, 0, 255, height - margin, margin);
+        let y = map(amplitude, 0, 255, height - bottomMargin, topMargin);
         vertex(x, y);
       }
       endShape();
     }
   }
+  
+  // Draw legend below the graph
+  drawLegendBelow(sideMargin+50, height-40);
 }
 
-function drawTimeLabels(margin) {
+function drawTimeLabels(sideMargin, topMargin, bottomMargin) {
   textAlign(CENTER, TOP);
-  textSize(16);
+  textSize(12);
   fill(0);
   let maxTime = frequencyData.length > 0 ? 
     frequencyData[frequencyData.length - 1].time : 
@@ -995,72 +1228,125 @@ function drawTimeLabels(margin) {
   
   for (let i = 0; i <= 10; i++) {
     let time = map(i, 0, 10, 0, maxTime);
-    let x = map(i, 0, 10, margin, width - margin);
-    text(time.toFixed(1) + "s", x, height - margin + 15);
+    let x = map(i, 0, 10, sideMargin, width - sideMargin);
+    text(time.toFixed(0) + "s", x, height - bottomMargin + 15);
     
-    stroke(200);
-    strokeWeight(1);
-    line(x, margin, x, height - margin);
+    if (showGrid) {
+      stroke(200);
+      strokeWeight(1);
+      line(x, topMargin, x, height - bottomMargin);
+    }
   }
 }
 
-function drawLegend(margin) {
-  // Draw legend in top right
-  let legendX = width - margin - 200;
-  let legendY = margin + 30;
+function drawLegendBelow(sideMargin, legendY) {
+  if (!showLabels) return;
   
+  // Draw legend below the graph horizontally
   textAlign(LEFT, CENTER);
   textSize(14);
   
+  let legendX = sideMargin;
+  let itemWidth = 150;
+  
   for (let i = 0; i < numBands; i++) {
     let band = frequencyBands[i];
-    let y = legendY + i * 20;
+    let x = legendX + i * itemWidth;
     
     // Color line
     stroke(band.color[0], band.color[1], band.color[2]);
-    strokeWeight(4);
-    line(legendX, y, legendX + 30, y);
+    strokeWeight(3);
+    line(x, legendY, x + 25, legendY);
     
     // Label
     fill(0);
     noStroke();
-    text(`${band.min}-${band.max}Hz`, legendX + 40, y);
+    text(`${band.min}-${band.max}Hz`, x + 35, legendY);
+  }
+}
+
+function updateDOMStatus() {
+  let statusElement = document.getElementById('statusDisplay');
+  if (statusElement) {
+    let statusInfo = [];
+    statusInfo.push('Status: ');
+    if (song) {
+      let estimatedTime = frequencyData.length / (samplingSlider ? samplingSlider.value() : samplingRate);
+      statusInfo.push(`${estimatedTime.toFixed(1)}s/${song.duration().toFixed(1)}s`);
+    }
+    statusInfo.push(`${isRecording ? 'REC' : 'IDLE'}`);
+    statusInfo.push(`${frequencyData.length}pts`);
+    statusInfo.push(`${numBands}bands`);
+    statusInfo.push(`${overlayMode ? 'Overlay' : 'Separate'}`);
+    statusInfo.push(`${radialMode ? 'Radial' : 'Linear'}`);
+    statusInfo.push(`${amplitudeNormalization ? 'Norm' : ''}`);
+    statusInfo.push(`${logarithmicScaling ? `Log(${logarithmicIntensity.toFixed(1)},${logarithmicMultiplier.toFixed(1)})` : ''}`);
+    
+    let statusText = statusInfo.filter(s => s !== '').join(' | ');
+    statusElement.innerHTML = statusText;
+  }
+}
+
+function updateDOMPlayhead() {
+  let playheadBar = document.getElementById('playheadBar');
+  let timeDisplay = document.getElementById('timeDisplay');
+  
+  if (song && playheadBar && timeDisplay) {
+    let progress = 0;
+    let currentTime = frequencyData.length / (samplingSlider ? samplingSlider.value() : samplingRate);
+    let totalTime = song.duration();
+    
+    if (totalTime > 0) {
+      progress = currentTime / totalTime;
+      progress = constrain(progress, 0, 1);
+    }
+    
+    playheadBar.style.width = (progress * 100) + '%';
+    playheadBar.style.backgroundColor = isRecording ? '#e74c3c' : '#3498db';
+    timeDisplay.innerHTML = `${currentTime.toFixed(1)}s / ${totalTime.toFixed(1)}s`;
   }
 }
 
 function drawUI() {
+  // Display current filename in bottom left of visualization
   fill(0);
-  textAlign(LEFT, TOP);
-  textSize(16);
+  textAlign(LEFT, BOTTOM);
+  textSize(14);
+  textStyle(BOLD);
   
-  let info = [];
-  if (song) {
-    info.push(`Duration: ${song.duration().toFixed(1)}s`);
-    // Show estimated time based on data points for accuracy
-    let estimatedTime = frequencyData.length / samplingSlider.value();
-    info.push(`Recorded time: ${estimatedTime.toFixed(1)}s`);
-  }
-  info.push(`Recording: ${isRecording ? 'ON' : 'OFF'}`);
-  info.push(`Data points: ${frequencyData.length}`);
-  info.push(`Bands: ${numBands}`);
-  info.push(`Smoothing: ${smoothingFrames} frames`);
-  info.push(`Mode: ${overlayMode ? 'Overlay' : 'Separate'}`);
-  info.push(`View: ${radialMode ? 'Radial' : 'Linear'}`);
-  info.push(`Normalization: ${amplitudeNormalization ? 'ON' : 'OFF'}`);
-  info.push(`Log scaling: ${logarithmicScaling ? 'ON' : 'OFF'}`);
-  
-  // Add batch processing status
-  if (batchProcessing || batchProgress !== "") {
-    info.push(`Batch: ${batchProgress}`);
+  let displayName = currentSongName || "No file loaded";
+  if (batchProcessing && batchProgress) {
+    displayName = `Processing: ${currentSongName}`;
   }
   
-  for (let i = 0; i < info.length; i++) {
-    text(info[i], 20, 160 + i * 20);
-  }
+  // Background for filename
+  fill(255, 255, 255, 200);
+  noStroke();
+  let textWidth = textSize() * displayName.length * 0.6;
+  rect(100, height - 140, textWidth + 20, 25, 4);
+  
+  fill(0);
+  text(displayName, 110, height - 120);
 }
+
 
 function mousePressed() {
   userStartAudio();
+}
+
+function toggleAudioMute() {
+  audioMuted = !audioMuted;
+  
+  // Use outputVolume() to mute audio output while preserving FFT analysis
+  if (audioMuted) {
+    outputVolume(0);
+  } else {
+    outputVolume(0.3);
+  }
+  
+  // Update button appearance
+  muteButton.html(audioMuted ? "🔇 Unmute" : "🔊 Mute");
+  muteButton.style('background-color', audioMuted ? '#e74c3c' : '#27ae60');
 }
 
 function togglePlayAndRecord() {
@@ -1082,8 +1368,8 @@ function togglePlayAndRecord() {
     amplitudeStats = { low: [], mid: [], high: [] }; // Reset normalization stats
     isRecording = true;
     
-    // Set normal volume for manual playback
-    song.setVolume(0.3);
+    // Set output volume based on mute state (preserves FFT analysis)
+    outputVolume(audioMuted ? 0 : 0.3);
     song.play();
     
     // Set up automatic stop when song ends
@@ -1161,44 +1447,71 @@ function generateLinearSeparateSVG() {
   svg += `
   </style>
   
-  <!-- Background -->
-  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  <!-- Background Layer -->
+  <g id="background-layer">
+    <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  </g>
   
-  <!-- Axes -->
-  <line x1="${margin}" y1="${canvasHeight - margin}" x2="${canvasWidth - margin}" y2="${canvasHeight - margin}" class="axis"/>
-  <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${canvasHeight - margin}" class="axis"/>
-  
-  <!-- Time labels and grid -->`;
+  <!-- Grid and Axes Layer -->
+  <g id="grid-axes-layer">
+    <line x1="${margin}" y1="${canvasHeight - margin}" x2="${canvasWidth - margin}" y2="${canvasHeight - margin}" class="axis"/>
+    <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${canvasHeight - margin}" class="axis"/>`;
   
   let duration = song ? song.duration() : 0;
   for (let i = 0; i <= 10; i++) {
     let time = map(i, 0, 10, 0, duration);
     let x = map(i, 0, 10, margin, canvasWidth - margin);
     svg += `
-  <line x1="${x}" y1="${margin}" x2="${x}" y2="${canvasHeight - margin}" class="grid"/>
-  <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+    <line x1="${x}" y1="${margin}" x2="${x}" y2="${canvasHeight - margin}" class="grid"/>`;
   }
   
-  // Section labels and grid lines for each band
+  // Section grid lines for each band
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let sectionY = margin + bandIndex * plotHeight;
+    svg += `
+    <line x1="${margin}" y1="${sectionY}" x2="${canvasWidth - margin}" y2="${sectionY}" class="grid"/>`;
+    if (bandIndex === numBands - 1) {
+      svg += `
+    <line x1="${margin}" y1="${sectionY + plotHeight}" x2="${canvasWidth - margin}" y2="${sectionY + plotHeight}" class="grid"/>`;
+    }
+  }
+  
+  svg += `
+  </g>
+  
+  <!-- Text Labels Layer -->
+  <g id="text-labels-layer">`;
+  
+  // Time labels
+  for (let i = 0; i <= 10; i++) {
+    let time = map(i, 0, 10, 0, duration);
+    let x = map(i, 0, 10, margin, canvasWidth - margin);
+    svg += `
+    <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+  }
+  
+  // Band labels
   for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
     let sectionY = margin + bandIndex * plotHeight;
     let band = frequencyBands[bandIndex];
     svg += `
-  <line x1="${margin}" y1="${sectionY}" x2="${canvasWidth - margin}" y2="${sectionY}" class="grid"/>`;
-    if (bandIndex === numBands - 1) {
-      svg += `
-  <line x1="${margin}" y1="${sectionY + plotHeight}" x2="${canvasWidth - margin}" y2="${sectionY + plotHeight}" class="grid"/>`;
-    }
-    svg += `
-  <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${band.min}-${band.max}Hz</text>`;
+    <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${band.min}-${band.max}Hz</text>`;
   }
   
-  // Frequency lines
+  svg += `
+  </g>
+  
+  <!-- Frequency Data Layer -->
+  <g id="frequency-data-layer">`;
+  
+  // Frequency lines with band name IDs
   if (frequencyData.length > 1) {
     for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
       let sectionY = margin + bandIndex * plotHeight;
+      let band = frequencyBands[bandIndex];
+      let bandName = `band-${bandIndex + 1}-${band.min}hz-${band.max}hz`;
       svg += `
-  <polyline class="band-${bandIndex}" points="`;
+    <polyline id="${bandName}" class="band-${bandIndex}" points="`;
       
       for (let i = 0; i < frequencyData.length; i++) {
         let x = map(i, 0, frequencyData.length - 1, margin, canvasWidth - margin);
@@ -1212,6 +1525,8 @@ function generateLinearSeparateSVG() {
   }
   
   svg += `
+  </g>
+  
 </svg>`;
   
   return svg;
@@ -1240,31 +1555,51 @@ function generateLinearOverlaySVG() {
   svg += `
   </style>
   
-  <!-- Background -->
-  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  <!-- Background Layer -->
+  <g id="background-layer">
+    <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  </g>
   
-  <!-- Axes -->
-  <line x1="${margin}" y1="${canvasHeight - margin}" x2="${canvasWidth - margin}" y2="${canvasHeight - margin}" class="axis"/>
-  <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${canvasHeight - margin}" class="axis"/>
-  
-  <!-- Time labels and grid -->`;
+  <!-- Grid and Axes Layer -->
+  <g id="grid-axes-layer">
+    <line x1="${margin}" y1="${canvasHeight - margin}" x2="${canvasWidth - margin}" y2="${canvasHeight - margin}" class="axis"/>
+    <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${canvasHeight - margin}" class="axis"/>`;
   
   let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
   for (let i = 0; i <= 10; i++) {
     let time = map(i, 0, 10, 0, maxTime);
     let x = map(i, 0, 10, margin, canvasWidth - margin);
     svg += `
-  <line x1="${x}" y1="${margin}" x2="${x}" y2="${canvasHeight - margin}" class="grid"/>
-  <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+    <line x1="${x}" y1="${margin}" x2="${x}" y2="${canvasHeight - margin}" class="grid"/>`;
   }
   
-  // Amplitude grid and labels
+  // Amplitude grid
+  for (let i = 0; i <= 10; i++) {
+    let y = map(i, 0, 10, canvasHeight - margin, margin);
+    svg += `
+    <line x1="${margin}" y1="${y}" x2="${canvasWidth - margin}" y2="${y}" class="grid"/>`;
+  }
+  
+  svg += `
+  </g>
+  
+  <!-- Text Labels Layer -->
+  <g id="text-labels-layer">`;
+  
+  // Time labels
+  for (let i = 0; i <= 10; i++) {
+    let time = map(i, 0, 10, 0, maxTime);
+    let x = map(i, 0, 10, margin, canvasWidth - margin);
+    svg += `
+    <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+  }
+  
+  // Amplitude labels
   for (let i = 0; i <= 10; i++) {
     let y = map(i, 0, 10, canvasHeight - margin, margin);
     let amplitude = map(i, 0, 10, 0, 255);
     svg += `
-  <line x1="${margin}" y1="${y}" x2="${canvasWidth - margin}" y2="${y}" class="grid"/>
-  <text x="${margin - 20}" y="${y + 5}" text-anchor="end" class="label">${Math.round(amplitude)}</text>`;
+    <text x="${margin - 20}" y="${y + 5}" text-anchor="end" class="label">${Math.round(amplitude)}</text>`;
   }
   
   // Legend
@@ -1274,15 +1609,23 @@ function generateLinearOverlaySVG() {
     let band = frequencyBands[i];
     let y = legendY + i * 25;
     svg += `
-  <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
-  <text x="${legendX + 40}" y="${y + 5}" class="label">${band.min}-${band.max}Hz</text>`;
+    <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
+    <text x="${legendX + 40}" y="${y + 5}" class="label">${band.min}-${band.max}Hz</text>`;
   }
   
-  // Frequency lines (all overlaid)
+  svg += `
+  </g>
+  
+  <!-- Frequency Data Layer -->
+  <g id="frequency-data-layer">`;
+  
+  // Frequency lines (all overlaid) with band name IDs
   if (frequencyData.length > 1) {
     for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      let band = frequencyBands[bandIndex];
+      let bandName = `band-${bandIndex + 1}-${band.min}hz-${band.max}hz`;
       svg += `
-  <polyline class="band-${bandIndex}" points="`;
+    <polyline id="${bandName}" class="band-${bandIndex}" points="`;
       
       for (let i = 0; i < frequencyData.length; i++) {
         let x = map(i, 0, frequencyData.length - 1, margin, canvasWidth - margin);
@@ -1296,6 +1639,8 @@ function generateLinearOverlaySVG() {
   }
   
   svg += `
+  </g>
+  
 </svg>`;
   
   return svg;
@@ -1333,16 +1678,27 @@ function generateRadialOverlaySVG() {
   svg += `
   </style>
   
-  <!-- Background -->
-  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  <!-- Background Layer -->
+  <g id="background-layer">
+    <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  </g>
   
-  <!-- Reference circles -->`;
+  <!-- Grid and Axes Layer -->
+  <g id="grid-axes-layer">`;
   
   for (let i = 1; i <= 5; i++) {
     let radius = baseRadius + (maxRadius - baseRadius) * (i / 5);
     svg += `
-  <circle cx="${centerX}" cy="${centerY}" r="${radius}" class="axis"/>`;
+    <circle cx="${centerX}" cy="${centerY}" r="${radius}" class="axis"/>`;
   }
+  
+  // Center point
+  svg += `
+    <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  </g>
+  
+  <!-- Text Labels Layer -->
+  <g id="text-labels-layer">`;
   
   // Time markers
   let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
@@ -1353,7 +1709,7 @@ function generateRadialOverlaySVG() {
     let y = centerY + sin(radians(angle)) * markRadius;
     let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
     svg += `
-  <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
+    <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
   }
   
   // Legend - moved further left to avoid overlap
@@ -1363,15 +1719,23 @@ function generateRadialOverlaySVG() {
     let band = frequencyBands[i];
     let y = legendY + i * 25;
     svg += `
-  <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
-  <text x="${legendX + 40}" y="${y + 5}" font-family="Arial" font-size="14" fill="black">${band.min}-${band.max}Hz</text>`;
+    <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
+    <text x="${legendX + 40}" y="${y + 5}" font-family="Arial" font-size="14" fill="black">${band.min}-${band.max}Hz</text>`;
   }
   
-  // Radial frequency lines
+  svg += `
+  </g>
+  
+  <!-- Frequency Data Layer -->
+  <g id="frequency-data-layer">`;
+  
+  // Radial frequency lines with band name IDs
   if (frequencyData.length > 1) {
     for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+      let band = frequencyBands[bandIndex];
+      let bandName = `band-${bandIndex + 1}-${band.min}hz-${band.max}hz`;
       svg += `
-  <polygon class="band-${bandIndex}" points="`;
+    <polygon id="${bandName}" class="band-${bandIndex}" points="`;
       
       for (let i = 0; i < frequencyData.length; i++) {
         let angle = map(i, 0, frequencyData.length - 1, 0, 360) - 90;
@@ -1395,9 +1759,8 @@ function generateRadialOverlaySVG() {
     }
   }
   
-  // Center point
   svg += `
-  <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  </g>
   
 </svg>`;
   
@@ -1429,18 +1792,29 @@ function generateRadialSeparateSVG() {
   svg += `
   </style>
   
-  <!-- Background -->
-  <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  <!-- Background Layer -->
+  <g id="background-layer">
+    <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
+  </g>
   
-  <!-- Reference circles for each band -->`;
+  <!-- Grid and Axes Layer -->
+  <g id="grid-axes-layer">`;
   
   for (let i = 0; i < numBands; i++) {
     let bandBaseRadius = baseRadius + i * radiusStep;
     let bandMaxRadius = baseRadius + (i + 1) * radiusStep;
     svg += `
-  <circle cx="${centerX}" cy="${centerY}" r="${bandBaseRadius}" class="axis"/>
-  <circle cx="${centerX}" cy="${centerY}" r="${bandMaxRadius}" class="axis"/>`;
+    <circle cx="${centerX}" cy="${centerY}" r="${bandBaseRadius}" class="axis"/>
+    <circle cx="${centerX}" cy="${centerY}" r="${bandMaxRadius}" class="axis"/>`;
   }
+  
+  // Center point
+  svg += `
+    <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  </g>
+  
+  <!-- Text Labels Layer -->
+  <g id="text-labels-layer">`;
   
   // Time markers
   let maxTime = frequencyData.length > 0 ? frequencyData[frequencyData.length - 1].time : 0;
@@ -1451,7 +1825,7 @@ function generateRadialSeparateSVG() {
     let y = centerY + sin(radians(angle)) * markRadius;
     let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
     svg += `
-  <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
+    <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
   }
   
   // Band labels
@@ -1463,17 +1837,25 @@ function generateRadialSeparateSVG() {
     let labelX = centerX + labelRadius + 10;
     let labelY = centerY + i * 20 - (numBands * 20) / 2;
     svg += `
-  <text x="${labelX}" y="${labelY}" font-family="Arial" font-size="12" fill="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})">${band.min}-${band.max}Hz</text>`;
+    <text x="${labelX}" y="${labelY}" font-family="Arial" font-size="12" fill="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})">${band.min}-${band.max}Hz</text>`;
   }
   
-  // Radial frequency lines (separate rings)
+  svg += `
+  </g>
+  
+  <!-- Frequency Data Layer -->
+  <g id="frequency-data-layer">`;
+  
+  // Radial frequency lines (separate rings) with band name IDs
   if (frequencyData.length > 1) {
     for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
       let bandBaseRadius = baseRadius + bandIndex * radiusStep;
       let bandMaxRadius = baseRadius + (bandIndex + 1) * radiusStep;
+      let band = frequencyBands[bandIndex];
+      let bandName = `band-${bandIndex + 1}-${band.min}hz-${band.max}hz`;
       
       svg += `
-  <polygon class="band-${bandIndex}" points="`;
+    <polygon id="${bandName}" class="band-${bandIndex}" points="`;
       
       for (let i = 0; i < frequencyData.length; i++) {
         let angle = map(i, 0, frequencyData.length - 1, 0, 360) - 90;
@@ -1497,9 +1879,8 @@ function generateRadialSeparateSVG() {
     }
   }
   
-  // Center point
   svg += `
-  <circle cx="${centerX}" cy="${centerY}" r="4" class="center"/>
+  </g>
   
 </svg>`;
   
