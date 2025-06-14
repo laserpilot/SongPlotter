@@ -35,22 +35,29 @@ let batchFiles = [];
 let currentBatchIndex = 0;
 let batchProgress = "";
 let batchProcessing = false;
+let batchFileSelectionTimeout;
+let lastBatchFileTime = 0;
 
 // GUI elements
 let numBandsSlider, samplingSlider, smoothingSlider, overlayToggle, normalizationToggle;
 let logarithmicToggle, logIntensitySlider, logMultiplierSlider, radialToggle;
 let batchButton, batchFileInput, muteButton, gridToggle, labelsToggle;
+let songVolumeSlider, outputVolumeSlider;
 let bandControls = [];
 let guiPanel;
 let audioMuted = false;
+let songVolume = 0.3; // Song volume (affects FFT analysis)
+let outputVol = 0.3; // Output volume (what you hear)
 
 // UI scaling based on canvas size
 let baseCanvasWidth = 1191;
 let baseCanvasHeight = 842;
 let uiScale = canvasWidth / baseCanvasWidth;
+let uiFontSize = 16; // Global font size for UI elements
 
 function preload() {
   song = loadSound('musicfiles/02 Break.m4a', loaded);
+  song.setVolume(songVolume);
   currentSongName = "[Need to load song]";
 }
 
@@ -58,6 +65,7 @@ function setup() {
   let cnv = createCanvas(canvasWidth, canvasHeight);
   cnv.position(20, 100);
   fft = new p5.FFT(0.8, fftSize);
+  fft.setInput(song);
   
   // Set initial UI scale
   let availableWidth = windowWidth - 400;
@@ -73,7 +81,7 @@ function setup() {
   createCleanUI();
   
   console.log("Setup complete");
-  outputVolume(0.3);
+  outputVolume(outputVol);
 }
 
 function windowResized() {
@@ -104,7 +112,7 @@ function createCleanUI() {
   // Create unified top bar with scaling
   let topBar = createDiv('');
   topBar.position(10, 10);
-  topBar.style('width', `${(canvasWidth * uiScale) - 60}px`);
+  topBar.style('width', `${(canvasWidth * uiScale)+100}px`);
   topBar.style('height', '50px');
   topBar.style('background-color', '#f8f8f8');
   topBar.style('border', '2px solid #ddd');
@@ -114,9 +122,61 @@ function createCleanUI() {
   topBar.style('gap', '15px');
   topBar.style('align-items', 'center');
   topBar.style('font-family', 'Arial, sans-serif');
-  topBar.style('font-size', '12px');
+  topBar.style('font-size', `${uiFontSize}px`);
   topBar.style('flex-wrap', 'wrap');
   
+  // SongPlotter branding section
+  let brandingSection = createDiv('');
+  brandingSection.parent(topBar);
+  brandingSection.style('display', 'flex');
+  brandingSection.style('gap', '10px');
+  brandingSection.style('align-items', 'center');
+  
+  let brandLabel = createElement('h2', 'SongPlotter');
+  brandLabel.parent(brandingSection);
+  brandLabel.style('margin', '0');
+  brandLabel.style('font-size', '18px');
+  brandLabel.style('font-weight', 'bold');
+  brandLabel.style('color', '#333');
+  
+  let aboutButton = createButton('About');
+  aboutButton.mousePressed(showAboutModal);
+  aboutButton.parent(brandingSection);
+  aboutButton.style('padding', '4px 8px');
+  aboutButton.style('font-size', '12px');
+  aboutButton.style('border-radius', '4px');
+  aboutButton.style('border', '1px solid #ccc');
+  aboutButton.style('background-color', '#fff');
+  aboutButton.style('color', '#666');
+  aboutButton.style('cursor', 'pointer');
+  
+   // File inputs section
+  let filesSection = createDiv('');
+  filesSection.parent(topBar);
+  filesSection.style('display', 'flex');
+  filesSection.style('gap', '10px');
+  filesSection.style('align-items', 'center');
+  
+  let fileLabel = createElement('label', 'File:');
+  fileLabel.parent(filesSection);
+  fileLabel.style('font-weight', 'bold');
+  fileLabel.style('font-size', `${uiFontSize}px`);
+  
+  fileInput = createFileInput(handleFile);
+  fileInput.parent(filesSection);
+  fileInput.style('font-size', `${uiFontSize}px`);
+  
+  let batchLabel = createElement('label', 'Load Batch:');
+  batchLabel.parent(filesSection);
+  batchLabel.style('font-weight', 'bold');
+  batchLabel.style('font-size', `${uiFontSize}px`);
+  
+  batchFileInput = createFileInput(handleBatchFiles);
+  batchFileInput.parent(filesSection);
+  batchFileInput.style('font-size', `${uiFontSize}px`);
+  batchFileInput.attribute('multiple', true);
+  batchFileInput.attribute('accept', 'audio/*');
+
   // Buttons section
   let buttonsSection = createDiv('');
   buttonsSection.parent(topBar);
@@ -124,11 +184,11 @@ function createCleanUI() {
   buttonsSection.style('gap', '10px');
   buttonsSection.style('align-items', 'center');
   
-  playButton = createButton("▶ Play");
+  playButton = createButton("▶ Play and Start Recording");
   playButton.mousePressed(togglePlayAndRecord);
   playButton.parent(buttonsSection);
   playButton.style('padding', '8px 12px');
-  playButton.style('font-size', '12px');
+  playButton.style('font-size', `${uiFontSize}px`);
   playButton.style('border-radius', '6px');
   playButton.style('border', 'none');
   playButton.style('background-color', '#2ecc71');
@@ -139,7 +199,7 @@ function createCleanUI() {
   muteButton.mousePressed(toggleAudioMute);
   muteButton.parent(buttonsSection);
   muteButton.style('padding', '8px 12px');
-  muteButton.style('font-size', '12px');
+  muteButton.style('font-size', `${uiFontSize}px`);
   muteButton.style('border-radius', '6px');
   muteButton.style('border', 'none');
   muteButton.style('background-color', audioMuted ? '#e74c3c' : '#27ae60');
@@ -150,50 +210,23 @@ function createCleanUI() {
   exportButton.mousePressed(exportSVG);
   exportButton.parent(buttonsSection);
   exportButton.style('padding', '8px 12px');
-  exportButton.style('font-size', '12px');
+  exportButton.style('font-size', `${uiFontSize}px`);
   exportButton.style('border-radius', '6px');
   exportButton.style('border', 'none');
   exportButton.style('background-color', '#3498db');
   exportButton.style('color', 'white');
   exportButton.style('cursor', 'pointer');
   
-  batchButton = createButton("🗂️ Batch");
+  batchButton = createButton("🗂️ Run Batch");
   batchButton.mousePressed(startBatchProcessing);
   batchButton.parent(buttonsSection);
   batchButton.style('padding', '8px 12px');
-  batchButton.style('font-size', '12px');
+  batchButton.style('font-size', `${uiFontSize}px`);
   batchButton.style('border-radius', '6px');
   batchButton.style('border', 'none');
   batchButton.style('background-color', '#e74c3c');
   batchButton.style('color', 'white');
   batchButton.style('cursor', 'pointer');
-  
-  // File inputs section
-  let filesSection = createDiv('');
-  filesSection.parent(topBar);
-  filesSection.style('display', 'flex');
-  filesSection.style('gap', '10px');
-  filesSection.style('align-items', 'center');
-  
-  let fileLabel = createElement('label', 'File:');
-  fileLabel.parent(filesSection);
-  fileLabel.style('font-weight', 'bold');
-  fileLabel.style('font-size', '12px');
-  
-  fileInput = createFileInput(handleFile);
-  fileInput.parent(filesSection);
-  fileInput.style('font-size', '11px');
-  
-  let batchLabel = createElement('label', 'Batch:');
-  batchLabel.parent(filesSection);
-  batchLabel.style('font-weight', 'bold');
-  batchLabel.style('font-size', '12px');
-  
-  batchFileInput = createFileInput(handleBatchFiles);
-  batchFileInput.parent(filesSection);
-  batchFileInput.style('font-size', '11px');
-  batchFileInput.attribute('multiple', true);
-  batchFileInput.attribute('accept', 'audio/*');
   
   // Playhead section
   let playheadSection = createDiv('');
@@ -206,7 +239,7 @@ function createCleanUI() {
   // Status display
   let statusDisplay = createDiv('Status: Loading...');
   statusDisplay.parent(playheadSection);
-  statusDisplay.style('font-size', '10px');
+  statusDisplay.style('font-size', `${uiFontSize}px`);
   statusDisplay.style('color', '#666');
   statusDisplay.id('statusDisplay');
   
@@ -231,7 +264,7 @@ function createCleanUI() {
   // Time display
   let timeDisplay = createDiv('0.0s / 0.0s');
   timeDisplay.parent(playheadSection);
-  timeDisplay.style('font-size', '10px');
+  timeDisplay.style('font-size', `${uiFontSize}px`);
   timeDisplay.style('color', '#666');
   timeDisplay.id('timeDisplay');
   
@@ -246,30 +279,31 @@ function createGUIPanel() {
   
   guiPanel = createDiv('');
   guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
-  guiPanel.style('width', '300px');
+  guiPanel.style('width', '400px');
   guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
   guiPanel.style('background-color', '#f8f8f8');
   guiPanel.style('border', '2px solid #ddd');
   guiPanel.style('border-radius', '8px');
   guiPanel.style('padding', '15px');
   guiPanel.style('font-family', 'Arial, sans-serif');
-  guiPanel.style('font-size', '12px');
+  guiPanel.style('font-size', `${uiFontSize}px`);
   guiPanel.style('overflow-y', 'auto');
   guiPanel.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
   
   // Number of bands control
-  let title = createElement('h3', 'Frequency Band Controls');
+  let title = createElement('h3', 'Configuration Controls');
   title.parent(guiPanel);
   title.style('margin', '0 0 20px 0');
   title.style('color', '#333');
   title.style('font-size', '18px');
   
-  let bandsLabel = createElement('label', 'Number of Bands (1-8):');
+  let bandsLabel = createElement('label', `Number of Bands (1-8): ${numBands}`);
   bandsLabel.parent(guiPanel);
   bandsLabel.style('display', 'block');
   bandsLabel.style('margin-bottom', '8px');
   bandsLabel.style('font-weight', 'bold');
   bandsLabel.style('font-size', '14px');
+  bandsLabel.id('bandsLabel');
   
   numBandsSlider = createSlider(1, 8, numBands);
   numBandsSlider.parent(guiPanel);
@@ -279,12 +313,13 @@ function createGUIPanel() {
   numBandsSlider.input(updateBandCount);
   
   // Sampling rate control
-  let samplingLabel = createElement('label', 'Sampling Rate (samples/sec):');
+  let samplingLabel = createElement('label', `Sampling Rate (samples/sec): ${samplingRate}`);
   samplingLabel.parent(guiPanel);
   samplingLabel.style('display', 'block');
   samplingLabel.style('margin-bottom', '8px');
   samplingLabel.style('font-weight', 'bold');
   samplingLabel.style('font-size', '14px');
+  samplingLabel.id('samplingLabel');
   
   samplingSlider = createSlider(1, 60, samplingRate);
   samplingSlider.parent(guiPanel);
@@ -293,12 +328,13 @@ function createGUIPanel() {
   samplingSlider.style('margin-bottom', '20px');
   
   // Smoothing control
-  let smoothingLabel = createElement('label', 'Smoothing (frames):');
+  let smoothingLabel = createElement('label', `Smoothing (frames): ${smoothingFrames}`);
   smoothingLabel.parent(guiPanel);
   smoothingLabel.style('display', 'block');
   smoothingLabel.style('margin-bottom', '8px');
   smoothingLabel.style('font-weight', 'bold');
   smoothingLabel.style('font-size', '14px');
+  smoothingLabel.id('smoothingLabel');
   
   smoothingSlider = createSlider(1, 60, smoothingFrames);
   smoothingSlider.parent(guiPanel);
@@ -329,12 +365,13 @@ function createGUIPanel() {
   logarithmicToggle.style('color', '#333');
   
   // Logarithmic intensity control
-  let logIntensityLabel = createElement('label', 'Log Curve Intensity (0.1-1.0):');
+  let logIntensityLabel = createElement('label', `Log Curve Intensity (0.1-1.0): ${logarithmicIntensity.toFixed(1)}`);
   logIntensityLabel.parent(guiPanel);
   logIntensityLabel.style('display', 'block');
   logIntensityLabel.style('margin-bottom', '8px');
   logIntensityLabel.style('font-weight', 'bold');
   logIntensityLabel.style('font-size', '14px');
+  logIntensityLabel.id('logIntensityLabel');
   
   logIntensitySlider = createSlider(0.1, 1.0, logarithmicIntensity, 0.1);
   logIntensitySlider.parent(guiPanel);
@@ -343,12 +380,13 @@ function createGUIPanel() {
   logIntensitySlider.style('margin-bottom', '20px');
   
   // Logarithmic multiplier control
-  let logMultiplierLabel = createElement('label', 'Log Scale Multiplier (0.5-4.0):');
+  let logMultiplierLabel = createElement('label', `Log Scale Multiplier (0.5-4.0): ${logarithmicMultiplier.toFixed(1)}`);
   logMultiplierLabel.parent(guiPanel);
   logMultiplierLabel.style('display', 'block');
   logMultiplierLabel.style('margin-bottom', '8px');
   logMultiplierLabel.style('font-weight', 'bold');
   logMultiplierLabel.style('font-size', '14px');
+  logMultiplierLabel.id('logMultiplierLabel');
   
   logMultiplierSlider = createSlider(0.5, 4.0, logarithmicMultiplier, 0.1);
   logMultiplierSlider.parent(guiPanel);
@@ -375,10 +413,40 @@ function createGUIPanel() {
   // Labels visibility toggle
   labelsToggle = createCheckbox('Show text labels', showLabels);
   labelsToggle.parent(guiPanel);
-  labelsToggle.style('margin-bottom', '30px');
+  labelsToggle.style('margin-bottom', '20px');
   labelsToggle.style('font-weight', 'bold');
   labelsToggle.style('font-size', '14px');
   labelsToggle.style('color', '#333');
+  
+  // Song volume control
+  let songVolumeLabel = createElement('label', `Song Volume: ${songVolume.toFixed(1)}`);
+  songVolumeLabel.parent(guiPanel);
+  songVolumeLabel.style('display', 'block');
+  songVolumeLabel.style('margin-bottom', '8px');
+  songVolumeLabel.style('font-weight', 'bold');
+  songVolumeLabel.style('font-size', '14px');
+  songVolumeLabel.id('songVolumeLabel');
+  
+  songVolumeSlider = createSlider(0, 1.0, songVolume, 0.01);
+  songVolumeSlider.parent(guiPanel);
+  songVolumeSlider.style('width', '100%');
+  songVolumeSlider.style('height', '20px');
+  songVolumeSlider.style('margin-bottom', '20px');
+  
+  // Output volume control
+  let outputVolumeLabel = createElement('label', `Output Volume: ${outputVol.toFixed(1)}`);
+  outputVolumeLabel.parent(guiPanel);
+  outputVolumeLabel.style('display', 'block');
+  outputVolumeLabel.style('margin-bottom', '8px');
+  outputVolumeLabel.style('font-weight', 'bold');
+  outputVolumeLabel.style('font-size', '14px');
+  outputVolumeLabel.id('outputVolumeLabel');
+  
+  outputVolumeSlider = createSlider(0, 1.0, outputVol, 0.01);
+  outputVolumeSlider.parent(guiPanel);
+  outputVolumeSlider.style('width', '100%');
+  outputVolumeSlider.style('height', '20px');
+  outputVolumeSlider.style('margin-bottom', '30px');
   
   // Create initial band controls
   createBandControls();
@@ -390,6 +458,12 @@ function updateBandCount() {
     numBands = newNumBands;
     updateFrequencyBands();
     recreateBandControls();
+    
+    // Update the bands label
+    let bandsLabelElement = document.getElementById('bandsLabel');
+    if (bandsLabelElement) {
+      bandsLabelElement.innerHTML = `Number of Bands (1-8): ${numBands}`;
+    }
   }
 }
 
@@ -510,7 +584,12 @@ function createBandControls() {
 
 function loaded() {
   console.log("Song loaded");
-  outputVolume(0.3);
+  // Reconnect FFT to the new song (only if FFT exists)
+  if (fft && song) {
+    fft.setInput(song);
+    console.log("FFT reconnected to new song");
+  }
+  outputVolume(outputVol);
 }
 
 function handleFile(file) {
@@ -527,14 +606,43 @@ function handleFile(file) {
 }
 
 function handleBatchFiles(files) {
-  batchFiles = [];
-  for (let i = 0; i < files.length; i++) {
-    if (files[i].type === 'audio') {
-      batchFiles.push(files[i]);
-    }
+  // Clear any existing timeout
+  if (batchFileSelectionTimeout) {
+    clearTimeout(batchFileSelectionTimeout);
   }
-  console.log(`${batchFiles.length} audio files selected for batch processing`);
-  batchProgress = `${batchFiles.length} files ready for batch processing`;
+  
+  // Handle case where p5.js may call this function for each individual file
+  // or pass an array of files
+  if (!Array.isArray(files)) {
+    // Single file case - reset batch on first file, then add subsequent files
+    if (files && files.type === 'audio') {
+      // If this is the first file in a new selection, reset the batch
+      if (batchFiles.length === 0 || Date.now() - lastBatchFileTime > 1000) {
+        batchFiles = [];
+        console.log("Starting new batch file selection");
+      }
+      batchFiles.push(files);
+      lastBatchFileTime = Date.now();
+      console.log(`Added file to batch: ${files.name}. Total: ${batchFiles.length}`);
+      
+      // Set a timeout to finalize the batch selection
+      batchFileSelectionTimeout = setTimeout(() => {
+        console.log(`Batch file selection complete: ${batchFiles.length} audio files`);
+        batchProgress = `${batchFiles.length} files ready for batch processing`;
+      }, 500);
+    }
+  } else {
+    // Array of files case - reset and populate batch
+    console.log(`files: ${files.length}`);
+    batchFiles = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].type === 'audio') {
+        batchFiles.push(files[i]);
+      }
+    }
+    console.log(`${batchFiles.length} audio files selected for batch processing`);
+    batchProgress = `${batchFiles.length} files ready for batch processing`;
+  }
 }
 
 function startBatchProcessing() {
@@ -580,8 +688,14 @@ function processBatchFile() {
   
   // Load and process the file
   song = loadSound(file.data, () => {
-    // Set output volume based on mute state (preserves FFT analysis)
-    outputVolume(audioMuted ? 0 : 0.3);
+    // Reconnect FFT to the new song (ensure both exist)
+    if (fft && song) {
+      fft.setInput(song);
+      console.log("FFT reconnected to batch song:", currentSongName);
+    }
+    
+    // Set output volume based on mute state
+    outputVolume(audioMuted ? 0 : outputVol);
     
     // Start recording and playback
     isRecording = true;
@@ -670,6 +784,49 @@ function draw() {
   showGrid = gridToggle.checked();
   showLabels = labelsToggle.checked();
   
+  // Update UI labels with current values
+  let samplingLabelElement = document.getElementById('samplingLabel');
+  if (samplingLabelElement) {
+    samplingLabelElement.innerHTML = `Sampling Rate (samples/sec): ${samplingSlider.value()}`;
+  }
+  
+  let smoothingLabelElement = document.getElementById('smoothingLabel');
+  if (smoothingLabelElement) {
+    smoothingLabelElement.innerHTML = `Smoothing (frames): ${smoothingFrames}`;
+  }
+  
+  let logIntensityLabelElement = document.getElementById('logIntensityLabel');
+  if (logIntensityLabelElement) {
+    logIntensityLabelElement.innerHTML = `Log Curve Intensity (0.1-1.0): ${logarithmicIntensity.toFixed(1)}`;
+  }
+  
+  let logMultiplierLabelElement = document.getElementById('logMultiplierLabel');
+  if (logMultiplierLabelElement) {
+    logMultiplierLabelElement.innerHTML = `Log Scale Multiplier (0.5-4.0): ${logarithmicMultiplier.toFixed(1)}`;
+  }
+  
+  // Update volume controls
+  if (songVolumeSlider) {
+    songVolume = songVolumeSlider.value();
+    if (song) {
+      song.setVolume(songVolume);
+    }
+    let songVolumeLabelElement = document.getElementById('songVolumeLabel');
+    if (songVolumeLabelElement) {
+      songVolumeLabelElement.innerHTML = `Song Volume: ${songVolume.toFixed(1)}`;
+    }
+  }
+  
+  if (outputVolumeSlider) {
+    outputVol = outputVolumeSlider.value();
+    // Only apply output volume if not muted
+    outputVolume(audioMuted ? 0 : outputVol);
+    let outputVolumeLabelElement = document.getElementById('outputVolumeLabel');
+    if (outputVolumeLabelElement) {
+      outputVolumeLabelElement.innerHTML = `Output Volume: ${outputVol.toFixed(1)}`;
+    }
+  }
+  
   // Record frequency data while playing (with sampling rate control)
   if (song && song.isPlaying() && isRecording) {
     samplingCounter++;
@@ -716,7 +873,7 @@ function draw() {
   updateDOMPlayhead();
   
   // Draw UI info
-  drawUI();
+  //drawUI();
 }
 
 function updateBandSettings() {
@@ -956,8 +1113,8 @@ function drawRadialVisualization() {
     let y = centerY + sin(angle) * markRadius;
     
     let timeLabel = (frequencyData.length > 0) ? 
-      ((frequencyData[frequencyData.length - 1].time * i) / 12).toFixed(1) + "s" :
-      (i * 5) + "s";
+      formatTime((frequencyData[frequencyData.length - 1].time * i) / 12) :
+      formatTime(i * 5);
     text(timeLabel, x, y);
   }
   
@@ -1007,6 +1164,7 @@ function drawRadialOverlay(centerX, centerY, baseRadius, maxRadius) {
   
   // Draw legend
   drawRadialLegend(centerX, centerY, maxRadius);
+  drawUI();
 }
 
 function drawRadialSeparate(centerX, centerY, baseRadius, maxRadius) {
@@ -1154,6 +1312,7 @@ function drawSeparateBands(sideMargin, topMargin, plotWidth) {
   
   // Draw legend below the graph
   drawLegendBelow(sideMargin, height  );
+  drawUI();
 }
 
 function drawOverlayMode(sideMargin, topMargin, plotWidth) {
@@ -1229,7 +1388,7 @@ function drawTimeLabels(sideMargin, topMargin, bottomMargin) {
   for (let i = 0; i <= 10; i++) {
     let time = map(i, 0, 10, 0, maxTime);
     let x = map(i, 0, 10, sideMargin, width - sideMargin);
-    text(time.toFixed(0) + "s", x, height - bottomMargin + 15);
+    text(formatTime(time), x, height - bottomMargin + 15);
     
     if (showGrid) {
       stroke(200);
@@ -1269,10 +1428,10 @@ function updateDOMStatus() {
   let statusElement = document.getElementById('statusDisplay');
   if (statusElement) {
     let statusInfo = [];
-    statusInfo.push('Status: ');
+    statusInfo.push(`Status: ${currentSongName} `);
     if (song) {
       let estimatedTime = frequencyData.length / (samplingSlider ? samplingSlider.value() : samplingRate);
-      statusInfo.push(`${estimatedTime.toFixed(1)}s/${song.duration().toFixed(1)}s`);
+      statusInfo.push(`${formatTime(estimatedTime)}/${formatTime(song.duration())}`);
     }
     statusInfo.push(`${isRecording ? 'REC' : 'IDLE'}`);
     statusInfo.push(`${frequencyData.length}pts`);
@@ -1285,6 +1444,13 @@ function updateDOMStatus() {
     let statusText = statusInfo.filter(s => s !== '').join(' | ');
     statusElement.innerHTML = statusText;
   }
+}
+
+function formatTime(seconds) {
+  if (isNaN(seconds) || seconds < 0) return "0:00";
+  let minutes = Math.floor(seconds / 60);
+  let secs = Math.floor(seconds % 60);
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
 function updateDOMPlayhead() {
@@ -1303,7 +1469,7 @@ function updateDOMPlayhead() {
     
     playheadBar.style.width = (progress * 100) + '%';
     playheadBar.style.backgroundColor = isRecording ? '#e74c3c' : '#3498db';
-    timeDisplay.innerHTML = `${currentTime.toFixed(1)}s / ${totalTime.toFixed(1)}s`;
+    timeDisplay.innerHTML = `${formatTime(currentTime)} / ${formatTime(totalTime)}`;
   }
 }
 
@@ -1311,7 +1477,7 @@ function drawUI() {
   // Display current filename in bottom left of visualization
   fill(0);
   textAlign(LEFT, BOTTOM);
-  textSize(14);
+  textSize(20);
   textStyle(BOLD);
   
   let displayName = currentSongName || "No file loaded";
@@ -1320,13 +1486,13 @@ function drawUI() {
   }
   
   // Background for filename
-  fill(255, 255, 255, 200);
-  noStroke();
-  let textWidth = textSize() * displayName.length * 0.6;
-  rect(100, height - 140, textWidth + 20, 25, 4);
+  // fill(255, 255, 255, 200);
+  // noStroke();
+  // let textWidth = textSize() * displayName.length * 0.6;
+  // rect(100, height - 140, textWidth + 20, 25, 4);
   
   fill(0);
-  text(displayName, 110, height - 120);
+  text(displayName, canvasWidth/2, height - 30);
 }
 
 
@@ -1337,12 +1503,8 @@ function mousePressed() {
 function toggleAudioMute() {
   audioMuted = !audioMuted;
   
-  // Use outputVolume() to mute audio output while preserving FFT analysis
-  if (audioMuted) {
-    outputVolume(0);
-  } else {
-    outputVolume(0.3);
-  }
+  // Use outputVolume to mute audio output - use current outputVol setting
+  outputVolume(audioMuted ? 0 : outputVol);
   
   // Update button appearance
   muteButton.html(audioMuted ? "🔇 Unmute" : "🔊 Mute");
@@ -1368,8 +1530,8 @@ function togglePlayAndRecord() {
     amplitudeStats = { low: [], mid: [], high: [] }; // Reset normalization stats
     isRecording = true;
     
-    // Set output volume based on mute state (preserves FFT analysis)
-    outputVolume(audioMuted ? 0 : 0.3);
+    // Set output volume based on mute state
+    outputVolume(audioMuted ? 0 : outputVol);
     song.play();
     
     // Set up automatic stop when song ends
@@ -1487,7 +1649,7 @@ function generateLinearSeparateSVG() {
     let time = map(i, 0, 10, 0, duration);
     let x = map(i, 0, 10, margin, canvasWidth - margin);
     svg += `
-    <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+    <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${formatTime(time)}</text>`;
   }
   
   // Band labels
@@ -1525,6 +1687,11 @@ function generateLinearSeparateSVG() {
   }
   
   svg += `
+  </g>
+  
+  <!-- Song Title -->
+  <g id="song-title-layer">
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
   </g>
   
 </svg>`;
@@ -1591,7 +1758,7 @@ function generateLinearOverlaySVG() {
     let time = map(i, 0, 10, 0, maxTime);
     let x = map(i, 0, 10, margin, canvasWidth - margin);
     svg += `
-    <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${time.toFixed(1)}s</text>`;
+    <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${formatTime(time)}</text>`;
   }
   
   // Amplitude labels
@@ -1639,6 +1806,11 @@ function generateLinearOverlaySVG() {
   }
   
   svg += `
+  </g>
+  
+  <!-- Song Title -->
+  <g id="song-title-layer">
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
   </g>
   
 </svg>`;
@@ -1707,7 +1879,7 @@ function generateRadialOverlaySVG() {
     let markRadius = maxRadius + 20;
     let x = centerX + cos(radians(angle)) * markRadius;
     let y = centerY + sin(radians(angle)) * markRadius;
-    let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
+    let timeLabel = formatTime((maxTime * i) / 12);
     svg += `
     <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
   }
@@ -1760,6 +1932,11 @@ function generateRadialOverlaySVG() {
   }
   
   svg += `
+  </g>
+  
+  <!-- Song Title -->
+  <g id="song-title-layer">
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
   </g>
   
 </svg>`;
@@ -1823,7 +2000,7 @@ function generateRadialSeparateSVG() {
     let markRadius = maxRadius + 20;
     let x = centerX + cos(radians(angle)) * markRadius;
     let y = centerY + sin(radians(angle)) * markRadius;
-    let timeLabel = ((maxTime * i) / 12).toFixed(1) + "s";
+    let timeLabel = formatTime((maxTime * i) / 12);
     svg += `
     <text x="${x}" y="${y + 5}" class="label">${timeLabel}</text>`;
   }
@@ -1882,7 +2059,90 @@ function generateRadialSeparateSVG() {
   svg += `
   </g>
   
+  <!-- Song Title -->
+  <g id="song-title-layer">
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
+  </g>
+  
 </svg>`;
   
   return svg;
+}
+
+function showAboutModal() {
+  // Create modal backdrop
+  let modal = createDiv('');
+  modal.style('position', 'fixed');
+  modal.style('top', '0');
+  modal.style('left', '0');
+  modal.style('width', '100%');
+  modal.style('height', '100%');
+  modal.style('background-color', 'rgba(0,0,0,0.5)');
+  modal.style('display', 'flex');
+  modal.style('justify-content', 'center');
+  modal.style('align-items', 'center');
+  modal.style('z-index', '1000');
+  modal.id('aboutModal');
+  
+  // Create modal content
+  let modalContent = createDiv('');
+  modalContent.parent(modal);
+  modalContent.style('background-color', 'white');
+  modalContent.style('padding', '30px');
+  modalContent.style('border-radius', '10px');
+  modalContent.style('max-width', '600px');
+  modalContent.style('max-height', '80%');
+  modalContent.style('overflow-y', 'auto');
+  modalContent.style('font-family', 'Arial, sans-serif');
+  modalContent.style('box-shadow', '0 4px 20px rgba(0,0,0,0.3)');
+  
+  // Modal content HTML
+  modalContent.html(`
+    <h2 style="margin-top: 0; color: #333;">SongPlotter</h2>
+    <p><strong>A frequency visualization tool for pen plotting</strong></p>
+    
+    <h3>How to Use:</h3>
+    <ul>
+      <li><strong>Load Audio:</strong> Use "File" to load a single audio file, or "Batch" to load multiple files for automated processing</li>
+      <li><strong>Play & Record:</strong> Click "Play" to start recording frequency data from your audio</li>
+      <li><strong>Customize:</strong> Adjust frequency bands, sampling rate, smoothing, and visualization settings in the right panel</li>
+      <li><strong>Export:</strong> Click "Export" to save SVG files perfect for pen plotting</li>
+      <li><strong>Mute:</strong> Use the mute button to silence audio while preserving frequency analysis</li>
+    </ul>
+    
+    <h3>Features:</h3>
+    <ul>
+      <li>Real-time frequency analysis with customizable bands (1-8 bands)</li>
+      <li>Linear and radial visualization modes</li>
+      <li>Overlay and separate band display options</li>
+      <li>Logarithmic frequency scaling and amplitude normalization</li>
+      <li>Batch processing for multiple audio files</li>
+      <li>SVG export with organized layers and descriptive IDs</li>
+      <li>A3 landscape format optimized for pen plotting</li>
+    </ul>
+    
+    <h3>Tips:</h3>
+    <ul>
+      <li>Higher sampling rates capture more detail but create larger files</li>
+      <li>Smoothing helps reduce noise in the visualization</li>
+      <li>Turn off grid and labels for clean SVG exports</li>
+      <li>Experiment with different frequency band configurations for unique visualizations</li>
+    </ul>
+    
+    <div style="margin-top: 20px; text-align: center;">
+      <button id="closeModal" style="padding: 10px 20px; font-size: 16px; border: none; background-color: #3498db; color: white; border-radius: 5px; cursor: pointer;">Close</button>
+    </div>
+  `);
+  
+  // Add close functionality
+  document.getElementById('closeModal').onclick = function() {
+    modal.remove();
+  };
+  
+  // Close on backdrop click
+  modal.elt.onclick = function(e) {
+    if (e.target === modal.elt) {
+      modal.remove();
+    }
+  };
 }

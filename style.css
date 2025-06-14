@@ -1,8 +1,28 @@
 html, body {
   margin: 0;
   padding: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+body {
+  background-color: #f0f0f0;
+  font-family: Arial, sans-serif;
 }
 
 canvas {
   display: block;
+  border: 1px solid #ccc;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Container to center and scale content */
+.main-container {
+  width: 100%;
+  min-width: 1400px; /* Minimum width to show UI properly */
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 10px;
+  box-sizing: border-box;
 }
