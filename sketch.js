@@ -53,17 +53,17 @@ let outputVol = 0.3; // Output volume (what you hear)
 let baseCanvasWidth = 1191;
 let baseCanvasHeight = 842;
 let uiScale = canvasWidth / baseCanvasWidth;
-let uiFontSize = 16; // Global font size for UI elements
+let uiFontSize = 11; // Global font size for UI elements
 
 function preload() {
-  song = loadSound('musicfiles/02 Break.m4a', loaded);
+  //song = loadSound('musicfiles/02 Break.m4a', loaded); //Only on my local machine
   song.setVolume(songVolume);
   currentSongName = "[Need to load song]";
 }
 
 function setup() {
   let cnv = createCanvas(canvasWidth, canvasHeight);
-  cnv.position(20, 100);
+  cnv.position(20, 150);
   fft = new p5.FFT(0.8, fftSize);
   fft.setInput(song);
   
@@ -99,38 +99,49 @@ function windowResized() {
     canvas.style.transform = `scale(${uiScale})`;
     canvas.style.transformOrigin = 'top left';
   }
-  
+
   // Update GUI panel position without recreating everything
   if (guiPanel) {
     let canvasRect = canvas ? canvas.getBoundingClientRect() : {left: 20, top: 100};
     guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
     guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
   }
+
+  
 }
 
 function createCleanUI() {
-  // Create unified top bar with scaling
+  // Create unified top bar with better organization
   let topBar = createDiv('');
   topBar.position(10, 10);
-  topBar.style('width', `${(canvasWidth * uiScale)+100}px`);
-  topBar.style('height', '50px');
+  topBar.style('width', `${windowWidth - 50}px`);
+  topBar.style('height', '80px');
   topBar.style('background-color', '#f8f8f8');
   topBar.style('border', '2px solid #ddd');
   topBar.style('border-radius', '8px');
   topBar.style('padding', '15px');
   topBar.style('display', 'flex');
-  topBar.style('gap', '15px');
-  topBar.style('align-items', 'center');
-  topBar.style('font-family', 'Arial, sans-serif');
+  topBar.style('flex-direction', 'column');
+  topBar.style('gap', '10px');
+  topBar.style('font-family', 'Ubuntu, sans-serif');
   topBar.style('font-size', `${uiFontSize}px`);
-  topBar.style('flex-wrap', 'wrap');
   
-  // SongPlotter branding section
+  // Top row with main controls
+  let topRow = createDiv('');
+  topRow.parent(topBar);
+  topRow.style('display', 'flex');
+  topRow.style('gap', '20px');
+  topRow.style('align-items', 'center');
+  topRow.style('justify-content', 'space-between');
+  
+  // SongPlotter branding section (vertical stack)
   let brandingSection = createDiv('');
-  brandingSection.parent(topBar);
+  brandingSection.parent(topRow);
   brandingSection.style('display', 'flex');
-  brandingSection.style('gap', '10px');
-  brandingSection.style('align-items', 'center');
+  brandingSection.style('flex-direction', 'column');
+  brandingSection.style('gap', '2px');
+  brandingSection.style('align-items', 'flex-start');
+  brandingSection.style('min-width', '100px');
   
   let brandLabel = createElement('h2', 'SongPlotter');
   brandLabel.parent(brandingSection);
@@ -138,117 +149,129 @@ function createCleanUI() {
   brandLabel.style('font-size', '18px');
   brandLabel.style('font-weight', 'bold');
   brandLabel.style('color', '#333');
+  brandLabel.style('line-height', '1.1');
   
   let aboutButton = createButton('About');
   aboutButton.mousePressed(showAboutModal);
   aboutButton.parent(brandingSection);
-  aboutButton.style('padding', '4px 8px');
-  aboutButton.style('font-size', '12px');
+  aboutButton.style('padding', '2px 6px');
+  aboutButton.style('font-size', '11px');
   aboutButton.style('border-radius', '4px');
   aboutButton.style('border', '1px solid #ccc');
   aboutButton.style('background-color', '#fff');
   aboutButton.style('color', '#666');
   aboutButton.style('cursor', 'pointer');
   
-   // File inputs section
-  let filesSection = createDiv('');
-  filesSection.parent(topBar);
-  filesSection.style('display', 'flex');
-  filesSection.style('gap', '10px');
-  filesSection.style('align-items', 'center');
+  // Main controls section (File input, Play, Export)
+  let mainControlsSection = createDiv('');
+  mainControlsSection.parent(topRow);
+  mainControlsSection.style('display', 'flex');
+  mainControlsSection.style('gap', '12px');
+  mainControlsSection.style('align-items', 'center');
+  mainControlsSection.style('flex-grow', '1');
+  mainControlsSection.style('justify-content', 'center');
   
   let fileLabel = createElement('label', 'File:');
-  fileLabel.parent(filesSection);
+  fileLabel.parent(mainControlsSection);
   fileLabel.style('font-weight', 'bold');
-  fileLabel.style('font-size', `${uiFontSize}px`);
+  fileLabel.style('font-size', '14px');
   
   fileInput = createFileInput(handleFile);
-  fileInput.parent(filesSection);
-  fileInput.style('font-size', `${uiFontSize}px`);
-  
-  let batchLabel = createElement('label', 'Load Batch:');
-  batchLabel.parent(filesSection);
-  batchLabel.style('font-weight', 'bold');
-  batchLabel.style('font-size', `${uiFontSize}px`);
-  
-  batchFileInput = createFileInput(handleBatchFiles);
-  batchFileInput.parent(filesSection);
-  batchFileInput.style('font-size', `${uiFontSize}px`);
-  batchFileInput.attribute('multiple', true);
-  batchFileInput.attribute('accept', 'audio/*');
-
-  // Buttons section
-  let buttonsSection = createDiv('');
-  buttonsSection.parent(topBar);
-  buttonsSection.style('display', 'flex');
-  buttonsSection.style('gap', '10px');
-  buttonsSection.style('align-items', 'center');
+  fileInput.parent(mainControlsSection);
+  fileInput.style('font-size', '13px');
   
   playButton = createButton("▶ Play and Start Recording");
   playButton.mousePressed(togglePlayAndRecord);
-  playButton.parent(buttonsSection);
-  playButton.style('padding', '8px 12px');
-  playButton.style('font-size', `${uiFontSize}px`);
+  playButton.parent(mainControlsSection);
+  playButton.style('padding', '6px 10px');
+  playButton.style('font-size', '13px');
   playButton.style('border-radius', '6px');
   playButton.style('border', 'none');
   playButton.style('background-color', '#2ecc71');
   playButton.style('color', 'white');
   playButton.style('cursor', 'pointer');
   
-  muteButton = createButton(audioMuted ? "🔇 Unmute" : "🔊 Mute");
-  muteButton.mousePressed(toggleAudioMute);
-  muteButton.parent(buttonsSection);
-  muteButton.style('padding', '8px 12px');
-  muteButton.style('font-size', `${uiFontSize}px`);
-  muteButton.style('border-radius', '6px');
-  muteButton.style('border', 'none');
-  muteButton.style('background-color', audioMuted ? '#e74c3c' : '#27ae60');
-  muteButton.style('color', 'white');
-  muteButton.style('cursor', 'pointer');
-  
   exportButton = createButton("📄 Export");
   exportButton.mousePressed(exportSVG);
-  exportButton.parent(buttonsSection);
-  exportButton.style('padding', '8px 12px');
-  exportButton.style('font-size', `${uiFontSize}px`);
+  exportButton.parent(mainControlsSection);
+  exportButton.style('padding', '6px 10px');
+  exportButton.style('font-size', '13px');
   exportButton.style('border-radius', '6px');
   exportButton.style('border', 'none');
   exportButton.style('background-color', '#3498db');
   exportButton.style('color', 'white');
   exportButton.style('cursor', 'pointer');
   
+  // Batch controls section (Load Batch, Run Batch, Mute)
+  let batchControlsSection = createDiv('');
+  batchControlsSection.parent(topRow);
+  batchControlsSection.style('display', 'flex');
+  batchControlsSection.style('gap', '10px');
+  batchControlsSection.style('align-items', 'center');
+  
+  let batchLabel = createElement('label', 'Batch:');
+  batchLabel.parent(batchControlsSection);
+  batchLabel.style('font-weight', 'bold');
+  batchLabel.style('font-size', '14px');
+  
+  batchFileInput = createFileInput(handleBatchFiles);
+  batchFileInput.parent(batchControlsSection);
+  batchFileInput.style('font-size', '13px');
+  batchFileInput.attribute('multiple', true);
+  batchFileInput.attribute('accept', 'audio/*');
+  
   batchButton = createButton("🗂️ Run Batch");
   batchButton.mousePressed(startBatchProcessing);
-  batchButton.parent(buttonsSection);
-  batchButton.style('padding', '8px 12px');
-  batchButton.style('font-size', `${uiFontSize}px`);
+  batchButton.parent(batchControlsSection);
+  batchButton.style('padding', '6px 10px');
+  batchButton.style('font-size', '13px');
   batchButton.style('border-radius', '6px');
   batchButton.style('border', 'none');
   batchButton.style('background-color', '#e74c3c');
   batchButton.style('color', 'white');
   batchButton.style('cursor', 'pointer');
   
-  // Playhead section
-  let playheadSection = createDiv('');
-  playheadSection.parent(topBar);
-  playheadSection.style('display', 'flex');
-  playheadSection.style('flex-direction', 'column');
-  playheadSection.style('gap', '5px');
-  playheadSection.style('min-width', '300px');
+  muteButton = createButton(audioMuted ? "🔇 Unmute" : "🔊 Mute");
+  muteButton.mousePressed(toggleAudioMute);
+  muteButton.parent(batchControlsSection);
+  muteButton.style('padding', '6px 10px');
+  muteButton.style('font-size', '13px');
+  muteButton.style('border-radius', '6px');
+  muteButton.style('border', 'none');
+  muteButton.style('background-color', audioMuted ? '#e74c3c' : '#27ae60');
+  muteButton.style('color', 'white');
+  muteButton.style('cursor', 'pointer');
+  
+  // Bottom row with status and playhead
+  let bottomRow = createDiv('');
+  bottomRow.parent(topBar);
+  bottomRow.style('display', 'flex');
+  bottomRow.style('gap', '15px');
+  bottomRow.style('align-items', 'center');
+  bottomRow.style('justify-content', 'space-between');
   
   // Status display
   let statusDisplay = createDiv('Status: Loading...');
-  statusDisplay.parent(playheadSection);
-  statusDisplay.style('font-size', `${uiFontSize}px`);
+  statusDisplay.parent(bottomRow);
+  statusDisplay.style('font-size', '13px');
   statusDisplay.style('color', '#666');
+  statusDisplay.style('flex-grow', '1');
   statusDisplay.id('statusDisplay');
+  
+  // Playhead section
+  let playheadSection = createDiv('');
+  playheadSection.parent(bottomRow);
+  playheadSection.style('display', 'flex');
+  playheadSection.style('gap', '10px');
+  playheadSection.style('align-items', 'center');
+  playheadSection.style('min-width', '350px');
   
   // Playhead bar
   let playheadContainer = createDiv('');
   playheadContainer.parent(playheadSection);
   playheadContainer.style('position', 'relative');
-  playheadContainer.style('height', '20px');
-  playheadContainer.style('width', '300px');
+  playheadContainer.style('height', '18px');
+  playheadContainer.style('width', '250px');
   playheadContainer.style('background-color', '#ddd');
   playheadContainer.style('border-radius', '4px');
   playheadContainer.style('overflow', 'hidden');
@@ -262,10 +285,11 @@ function createCleanUI() {
   playheadBar.id('playheadBar');
   
   // Time display
-  let timeDisplay = createDiv('0.0s / 0.0s');
+  let timeDisplay = createDiv('0:00 / 0:00');
   timeDisplay.parent(playheadSection);
-  timeDisplay.style('font-size', `${uiFontSize}px`);
+  timeDisplay.style('font-size', '13px');
   timeDisplay.style('color', '#666');
+  timeDisplay.style('min-width', '80px');
   timeDisplay.id('timeDisplay');
   
   // Create compact GUI panel
@@ -279,13 +303,13 @@ function createGUIPanel() {
   
   guiPanel = createDiv('');
   guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
-  guiPanel.style('width', '400px');
+  guiPanel.style('width', `${(windowWidth-canvasRect.right)}`);
   guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
   guiPanel.style('background-color', '#f8f8f8');
   guiPanel.style('border', '2px solid #ddd');
   guiPanel.style('border-radius', '8px');
   guiPanel.style('padding', '15px');
-  guiPanel.style('font-family', 'Arial, sans-serif');
+  guiPanel.style('font-family', 'Ubuntu, sans-serif');
   guiPanel.style('font-size', `${uiFontSize}px`);
   guiPanel.style('overflow-y', 'auto');
   guiPanel.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
@@ -301,8 +325,8 @@ function createGUIPanel() {
   bandsLabel.parent(guiPanel);
   bandsLabel.style('display', 'block');
   bandsLabel.style('margin-bottom', '8px');
-  bandsLabel.style('font-weight', 'bold');
-  bandsLabel.style('font-size', '14px');
+  //bandsLabel.style('font-weight', 'bold');
+  //bandsLabel.style('font-size', '14px');
   bandsLabel.id('bandsLabel');
   
   numBandsSlider = createSlider(1, 8, numBands);
@@ -317,8 +341,8 @@ function createGUIPanel() {
   samplingLabel.parent(guiPanel);
   samplingLabel.style('display', 'block');
   samplingLabel.style('margin-bottom', '8px');
-  samplingLabel.style('font-weight', 'bold');
-  samplingLabel.style('font-size', '14px');
+  //samplingLabel.style('font-weight', 'bold');
+  //samplingLabel.style('font-size', '14px');
   samplingLabel.id('samplingLabel');
   
   samplingSlider = createSlider(1, 60, samplingRate);
@@ -332,8 +356,8 @@ function createGUIPanel() {
   smoothingLabel.parent(guiPanel);
   smoothingLabel.style('display', 'block');
   smoothingLabel.style('margin-bottom', '8px');
-  smoothingLabel.style('font-weight', 'bold');
-  smoothingLabel.style('font-size', '14px');
+  //smoothingLabel.style('font-weight', 'bold');
+  //smoothingLabel.style('font-size', '14px');
   smoothingLabel.id('smoothingLabel');
   
   smoothingSlider = createSlider(1, 60, smoothingFrames);
@@ -346,22 +370,22 @@ function createGUIPanel() {
   overlayToggle = createCheckbox('Overlay all bands', overlayMode);
   overlayToggle.parent(guiPanel);
   overlayToggle.style('margin-bottom', '15px');
-  overlayToggle.style('font-weight', 'bold');
-  overlayToggle.style('font-size', '14px');
+  //overlayToggle.style('font-weight', 'bold');
+  //overlayToggle.style('font-size', '14px');
   
   // Normalization toggle
   normalizationToggle = createCheckbox('Normalize amplitude across bands', amplitudeNormalization);
   normalizationToggle.parent(guiPanel);
   normalizationToggle.style('margin-bottom', '15px');
-  normalizationToggle.style('font-weight', 'bold');
-  normalizationToggle.style('font-size', '14px');
+  //normalizationToggle.style('font-weight', 'bold');
+  //normalizationToggle.style('font-size', '14px');
   
   // Logarithmic scaling toggle
   logarithmicToggle = createCheckbox('Logarithmic frequency scaling', logarithmicScaling);
   logarithmicToggle.parent(guiPanel);
   logarithmicToggle.style('margin-bottom', '15px');
-  logarithmicToggle.style('font-weight', 'bold');
-  logarithmicToggle.style('font-size', '14px');
+  //logarithmicToggle.style('font-weight', 'bold');
+  //logarithmicToggle.style('font-size', '14px');
   logarithmicToggle.style('color', '#333');
   
   // Logarithmic intensity control
@@ -369,8 +393,8 @@ function createGUIPanel() {
   logIntensityLabel.parent(guiPanel);
   logIntensityLabel.style('display', 'block');
   logIntensityLabel.style('margin-bottom', '8px');
-  logIntensityLabel.style('font-weight', 'bold');
-  logIntensityLabel.style('font-size', '14px');
+  //logIntensityLabel.style('font-weight', 'bold');
+  //logIntensityLabel.style('font-size', '14px');
   logIntensityLabel.id('logIntensityLabel');
   
   logIntensitySlider = createSlider(0.1, 1.0, logarithmicIntensity, 0.1);
@@ -384,8 +408,8 @@ function createGUIPanel() {
   logMultiplierLabel.parent(guiPanel);
   logMultiplierLabel.style('display', 'block');
   logMultiplierLabel.style('margin-bottom', '8px');
-  logMultiplierLabel.style('font-weight', 'bold');
-  logMultiplierLabel.style('font-size', '14px');
+  //logMultiplierLabel.style('font-weight', 'bold');
+  //logMultiplierLabel.style('font-size', '14px');
   logMultiplierLabel.id('logMultiplierLabel');
   
   logMultiplierSlider = createSlider(0.5, 4.0, logarithmicMultiplier, 0.1);
@@ -398,24 +422,24 @@ function createGUIPanel() {
   radialToggle = createCheckbox('Radial visualization (circular)', radialMode);
   radialToggle.parent(guiPanel);
   radialToggle.style('margin-bottom', '15px');
-  radialToggle.style('font-weight', 'bold');
-  radialToggle.style('font-size', '14px');
+  //radialToggle.style('font-weight', 'bold');
+  //radialToggle.style('font-size', '14px');
   radialToggle.style('color', '#333');
   
   // Grid visibility toggle
   gridToggle = createCheckbox('Show grid lines', showGrid);
   gridToggle.parent(guiPanel);
   gridToggle.style('margin-bottom', '15px');
-  gridToggle.style('font-weight', 'bold');
-  gridToggle.style('font-size', '14px');
+  //gridToggle.style('font-weight', 'bold');
+  //gridToggle.style('font-size', '14px');
   gridToggle.style('color', '#333');
   
   // Labels visibility toggle
   labelsToggle = createCheckbox('Show text labels', showLabels);
   labelsToggle.parent(guiPanel);
   labelsToggle.style('margin-bottom', '20px');
-  labelsToggle.style('font-weight', 'bold');
-  labelsToggle.style('font-size', '14px');
+  //labelsToggle.style('font-weight', 'bold');
+  //labelsToggle.style('font-size', '14px');
   labelsToggle.style('color', '#333');
   
   // Song volume control
@@ -423,8 +447,8 @@ function createGUIPanel() {
   songVolumeLabel.parent(guiPanel);
   songVolumeLabel.style('display', 'block');
   songVolumeLabel.style('margin-bottom', '8px');
-  songVolumeLabel.style('font-weight', 'bold');
-  songVolumeLabel.style('font-size', '14px');
+  //songVolumeLabel.style('font-weight', 'bold');
+  //songVolumeLabel.style('font-size', '14px');
   songVolumeLabel.id('songVolumeLabel');
   
   songVolumeSlider = createSlider(0, 1.0, songVolume, 0.01);
@@ -438,8 +462,8 @@ function createGUIPanel() {
   outputVolumeLabel.parent(guiPanel);
   outputVolumeLabel.style('display', 'block');
   outputVolumeLabel.style('margin-bottom', '8px');
-  outputVolumeLabel.style('font-weight', 'bold');
-  outputVolumeLabel.style('font-size', '14px');
+  //outputVolumeLabel.style('font-weight', 'bold');
+  //outputVolumeLabel.style('font-size', '14px');
   outputVolumeLabel.id('outputVolumeLabel');
   
   outputVolumeSlider = createSlider(0, 1.0, outputVol, 0.01);
@@ -535,7 +559,7 @@ function createBandControls() {
     minLabel.style('display', 'block');
     minLabel.style('font-size', '13px');
     minLabel.style('margin-bottom', '5px');
-    minLabel.style('font-weight', 'bold');
+    //minLabel.style('font-weight', 'bold');
     
     let minSlider = createSlider(20, 19999, frequencyBands[i].min);
     minSlider.parent(container);
@@ -549,7 +573,7 @@ function createBandControls() {
     maxLabel.style('display', 'block');
     maxLabel.style('font-size', '13px');
     maxLabel.style('margin-bottom', '5px');
-    maxLabel.style('font-weight', 'bold');
+    //maxLabel.style('font-weight', 'bold');
     
     let maxSlider = createSlider(21, 20000, frequencyBands[i].max);
     maxSlider.parent(container);
@@ -563,7 +587,7 @@ function createBandControls() {
     scaleLabel.style('display', 'block');
     scaleLabel.style('font-size', '13px');
     scaleLabel.style('margin-bottom', '5px');
-    scaleLabel.style('font-weight', 'bold');
+    //scaleLabel.style('font-weight', 'bold');
     
     let scaleSlider = createSlider(0.1, 5.0, frequencyBands[i].scale, 0.1);
     scaleSlider.parent(container);
@@ -1597,7 +1621,7 @@ function generateLinearSeparateSVG() {
   <style>
     .axis { stroke: black; stroke-width: 2; }
     .grid { stroke: #cccccc; stroke-width: 0.5; }
-    .label { font-family: Arial, sans-serif; font-size: 10px; fill: black; }`;
+    .label { font-family: Ubuntu, sans-serif; font-size: 10px; fill: black; }`;
   
   // Generate CSS classes for each band
   for (let i = 0; i < numBands; i++) {
@@ -1710,7 +1734,7 @@ function generateLinearOverlaySVG() {
   <style>
     .axis { stroke: black; stroke-width: 3; }
     .grid { stroke: #cccccc; stroke-width: 1; }
-    .label { font-family: Arial, sans-serif; font-size: 16px; fill: black; }`;
+    .label { font-family: Ubuntu, sans-serif; font-size: 16px; fill: black; }`;
   
   // Generate CSS classes for each band
   for (let i = 0; i < numBands; i++) {
@@ -1837,7 +1861,7 @@ function generateRadialOverlaySVG() {
   ${generateMetadata()}
   <style>
     .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
-    .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
+    .label { font-family: Ubuntu, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
     .center { fill: black; }`;
   
   // Generate CSS classes for each band
@@ -1892,7 +1916,7 @@ function generateRadialOverlaySVG() {
     let y = legendY + i * 25;
     svg += `
     <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
-    <text x="${legendX + 40}" y="${y + 5}" font-family="Arial" font-size="14" fill="black">${band.min}-${band.max}Hz</text>`;
+    <text x="${legendX + 40}" y="${y + 5}" font-family="Ubuntu" font-size="14" fill="black">${band.min}-${band.max}Hz</text>`;
   }
   
   svg += `
@@ -1956,7 +1980,7 @@ function generateRadialSeparateSVG() {
   ${generateMetadata()}
   <style>
     .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
-    .label { font-family: Arial, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
+    .label { font-family: Ubuntu, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
     .center { fill: black; }`;
   
   // Generate CSS classes for each band
@@ -2014,7 +2038,7 @@ function generateRadialSeparateSVG() {
     let labelX = centerX + labelRadius + 10;
     let labelY = centerY + i * 20 - (numBands * 20) / 2;
     svg += `
-    <text x="${labelX}" y="${labelY}" font-family="Arial" font-size="12" fill="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})">${band.min}-${band.max}Hz</text>`;
+    <text x="${labelX}" y="${labelY}" font-family="Ubuntu" font-size="12" fill="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})">${band.min}-${band.max}Hz</text>`;
   }
   
   svg += `
@@ -2093,15 +2117,15 @@ function showAboutModal() {
   modalContent.style('max-width', '600px');
   modalContent.style('max-height', '80%');
   modalContent.style('overflow-y', 'auto');
-  modalContent.style('font-family', 'Arial, sans-serif');
+  modalContent.style('font-family', 'Ubuntu, sans-serif');
   modalContent.style('box-shadow', '0 4px 20px rgba(0,0,0,0.3)');
   
   // Modal content HTML
   modalContent.html(`
     <h2 style="margin-top: 0; color: #333;">SongPlotter</h2>
     <p><strong>A tool to allow you to visualize the amplitudes of different frequencies of a song, which can then be exported to an SVG format for pen plotting</strong></p>
-<p>Made by Blair Neal with Claude Code - 2025 - <a href="https://www.ablairneal.com">www.ablairneal.com</a></p>
-<p>No data is stored or transmitted when using this tool. Code is available <a href="https://github.com/laserpilot/SongPlotter">on GitHub</a></
+    <p>Made by Blair Neal with Claude Code - 2025 - <a href="https://www.ablairneal.com">www.ablairneal.com</a></p>
+    <p>No data is stored or transmitted when using this tool. Code is available <a href="https://github.com/laserpilot/SongPlotter">on GitHub</a></p>
 
     <h3>How to Use:</h3>
     <ul>
