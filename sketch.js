@@ -305,20 +305,21 @@ function createGUIPanel() {
   guiPanel.position(canvasRect.left + (canvasWidth * uiScale) + 20, canvasRect.top);
   guiPanel.style('width', `${(windowWidth-canvasRect.right)}`);
   guiPanel.style('height', `${(canvasHeight * uiScale) - 20}px`);
-  guiPanel.style('background-color', '#f8f8f8');
+  guiPanel.style('background-color', '#37718E');
   guiPanel.style('border', '2px solid #ddd');
   guiPanel.style('border-radius', '8px');
   guiPanel.style('padding', '15px');
   guiPanel.style('font-family', 'Ubuntu, sans-serif');
   guiPanel.style('font-size', `${uiFontSize}px`);
   guiPanel.style('overflow-y', 'auto');
-  guiPanel.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
+  guiPanel.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)')
+  guiPanel.style('color', '#ffffff')
   
   // Number of bands control
   let title = createElement('h3', 'Configuration Controls');
   title.parent(guiPanel);
   title.style('margin', '0 0 20px 0');
-  title.style('color', '#333');
+  title.style('color', '#f8f8f8');
   title.style('font-size', '18px');
   
   let bandsLabel = createElement('label', `Number of Bands (1-8): ${numBands}`);
@@ -366,12 +367,16 @@ function createGUIPanel() {
   smoothingSlider.style('height', '20px');
   smoothingSlider.style('margin-bottom', '20px');
   
+    // Radial mode toggle  
+  radialToggle = createCheckbox('Radial/Linear Toggle', radialMode);
+  radialToggle.parent(guiPanel);
+  radialToggle.style('margin-bottom', '15px');
+
+
   // Overlay mode toggle
   overlayToggle = createCheckbox('Overlay all bands', overlayMode);
   overlayToggle.parent(guiPanel);
   overlayToggle.style('margin-bottom', '15px');
-  //overlayToggle.style('font-weight', 'bold');
-  //overlayToggle.style('font-size', '14px');
   
   // Normalization toggle
   normalizationToggle = createCheckbox('Normalize amplitude across bands', amplitudeNormalization);
@@ -386,7 +391,6 @@ function createGUIPanel() {
   logarithmicToggle.style('margin-bottom', '15px');
   //logarithmicToggle.style('font-weight', 'bold');
   //logarithmicToggle.style('font-size', '14px');
-  logarithmicToggle.style('color', '#333');
   
   // Logarithmic intensity control
   let logIntensityLabel = createElement('label', `Log Curve Intensity (0.1-1.0): ${logarithmicIntensity.toFixed(1)}`);
@@ -418,37 +422,21 @@ function createGUIPanel() {
   logMultiplierSlider.style('height', '20px');
   logMultiplierSlider.style('margin-bottom', '20px');
   
-  // Radial mode toggle  
-  radialToggle = createCheckbox('Radial visualization (circular)', radialMode);
-  radialToggle.parent(guiPanel);
-  radialToggle.style('margin-bottom', '15px');
-  //radialToggle.style('font-weight', 'bold');
-  //radialToggle.style('font-size', '14px');
-  radialToggle.style('color', '#333');
-  
   // Grid visibility toggle
   gridToggle = createCheckbox('Show grid lines', showGrid);
   gridToggle.parent(guiPanel);
   gridToggle.style('margin-bottom', '15px');
-  //gridToggle.style('font-weight', 'bold');
-  //gridToggle.style('font-size', '14px');
-  gridToggle.style('color', '#333');
   
   // Labels visibility toggle
   labelsToggle = createCheckbox('Show text labels', showLabels);
   labelsToggle.parent(guiPanel);
   labelsToggle.style('margin-bottom', '20px');
-  //labelsToggle.style('font-weight', 'bold');
-  //labelsToggle.style('font-size', '14px');
-  labelsToggle.style('color', '#333');
   
   // Song volume control
   let songVolumeLabel = createElement('label', `Song Volume: ${songVolume.toFixed(1)}`);
   songVolumeLabel.parent(guiPanel);
   songVolumeLabel.style('display', 'block');
   songVolumeLabel.style('margin-bottom', '8px');
-  //songVolumeLabel.style('font-weight', 'bold');
-  //songVolumeLabel.style('font-size', '14px');
   songVolumeLabel.id('songVolumeLabel');
   
   songVolumeSlider = createSlider(0, 1.0, songVolume, 0.01);
@@ -542,7 +530,7 @@ function createBandControls() {
     container.parent(guiPanel);
     container.style('margin-bottom', '25px');
     container.style('padding', '15px');
-    container.style('background-color', '#fff');
+    container.style('background-color', '#254E70');
     container.style('border-radius', '8px');
     container.style('border', '2px solid #ddd');
     container.style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)');
@@ -2125,14 +2113,14 @@ function showAboutModal() {
     <h2 style="margin-top: 0; color: #333;">SongPlotter</h2>
     <p><strong>A tool to allow you to visualize the amplitudes of different frequencies of a song, which can then be exported to an SVG format for pen plotting</strong></p>
     <p>Made by Blair Neal with Claude Code - 2025 - <a href="https://www.ablairneal.com">www.ablairneal.com</a></p>
-    <p>No data is stored or transmitted when using this tool. Code is available <a href="https://github.com/laserpilot/SongPlotter">on GitHub</a></p>
+    <p>No data is stored or transmitted when using this tool. All files are yours and all content belongs to its original creators. Code is available <a href="https://github.com/laserpilot/SongPlotter">on GitHub</a></p>
 
     <h3>How to Use:</h3>
     <ul>
       <li><strong>Load Audio:</strong> Use "File" to load a single audio file, or "Batch" to load multiple files for automated processing</li>
       <li><strong>Play & Record:</strong> If just a single audio file, Click "Play & Record" to start recording frequency data from your audio. If you have loaded a batch of files, click "batch"</li>
       <li><strong>Customize:</strong> Adjust frequency bands, sampling rate, smoothing, and visualization settings in the right panel</li>
-      <li><strong>Export:</strong> Click "Export" to save SVG files perfect for pen plotting</li>
+      <li><strong>Export:</strong> Click "Export" to save SVG files perfect for pen plotting (batch will auto-download after each song finishes)</li>
       <li><strong>Mute:</strong> Use the mute button to silence audio while preserving frequency analysis</li>
     </ul>
     
@@ -2142,7 +2130,7 @@ function showAboutModal() {
       <li>Linear and radial visualization modes</li>
       <li>Overlay and separate band display options</li>
       <li>Logarithmic frequency scaling and amplitude normalization</li>
-      <li>Batch processing for multiple audio files</li>
+      <li>Batch processing for multiple audio files - auto-saves 4 variations after each song</li>
       <li>SVG export with organized layers and descriptive IDs</li>
       <li>A3 landscape format optimized for pen plotting</li>
     </ul>
