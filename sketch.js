@@ -873,7 +873,7 @@ function draw() {
   updateDOMPlayhead();
   
   // Draw UI info
-  //drawUI();
+  drawUI();
 }
 
 function updateBandSettings() {
@@ -1476,7 +1476,7 @@ function updateDOMPlayhead() {
 function drawUI() {
   // Display current filename in bottom left of visualization
   fill(0);
-  textAlign(LEFT, BOTTOM);
+  textAlign(CENTER, BOTTOM);
   textSize(20);
   textStyle(BOLD);
   
@@ -2099,12 +2099,14 @@ function showAboutModal() {
   // Modal content HTML
   modalContent.html(`
     <h2 style="margin-top: 0; color: #333;">SongPlotter</h2>
-    <p><strong>A frequency visualization tool for pen plotting</strong></p>
-    
+    <p><strong>A tool to allow you to visualize the amplitudes of different frequencies of a song, which can then be exported to an SVG format for pen plotting</strong></p>
+<p>Made by Blair Neal with Claude Code - 2025 - <a href="https://www.ablairneal.com">www.ablairneal.com</a></p>
+<p>No data is stored or transmitted when using this tool. Code is available <a href="https://github.com/laserpilot/SongPlotter">on GitHub</a></
+
     <h3>How to Use:</h3>
     <ul>
       <li><strong>Load Audio:</strong> Use "File" to load a single audio file, or "Batch" to load multiple files for automated processing</li>
-      <li><strong>Play & Record:</strong> Click "Play" to start recording frequency data from your audio</li>
+      <li><strong>Play & Record:</strong> If just a single audio file, Click "Play & Record" to start recording frequency data from your audio. If you have loaded a batch of files, click "batch"</li>
       <li><strong>Customize:</strong> Adjust frequency bands, sampling rate, smoothing, and visualization settings in the right panel</li>
       <li><strong>Export:</strong> Click "Export" to save SVG files perfect for pen plotting</li>
       <li><strong>Mute:</strong> Use the mute button to silence audio while preserving frequency analysis</li>
