@@ -61,6 +61,27 @@ function preload() {
   currentSongName = "[Need to load song]";
 }
 
+function frequencyToNote(frequency) {
+  if (frequency <= 0) return "";
+  
+  // A4 = 440 Hz is our reference
+  const A4 = 440;
+  const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  
+  // Calculate the number of semitones from A4
+  const semitones = Math.round(12 * Math.log2(frequency / A4));
+  
+  // A4 is note index 9 (A) in octave 4
+  const noteIndex = (9 + semitones) % 12;
+  const octave = 4 + Math.floor((9 + semitones) / 12);
+  
+  // Handle negative octave or very high frequencies
+  if (octave < 0) return "~sub-audible";
+  if (octave > 8) return ">C8";
+  
+  return `~${noteNames[noteIndex < 0 ? noteIndex + 12 : noteIndex]}${octave}`;
+}
+
 function setup() {
   let cnv = createCanvas(canvasWidth, canvasHeight);
   cnv.position(20, 150);
@@ -334,7 +355,7 @@ function createGUIPanel() {
   numBandsSlider.parent(guiPanel);
   numBandsSlider.style('width', '100%');
   numBandsSlider.style('height', '20px');
-  numBandsSlider.style('margin-bottom', '20px');
+  numBandsSlider.style('margin-bottom', '8px');
   numBandsSlider.input(updateBandCount);
   
   // Sampling rate control
@@ -350,7 +371,7 @@ function createGUIPanel() {
   samplingSlider.parent(guiPanel);
   samplingSlider.style('width', '100%');
   samplingSlider.style('height', '20px');
-  samplingSlider.style('margin-bottom', '20px');
+  samplingSlider.style('margin-bottom', '8px');
   
   // Smoothing control
   let smoothingLabel = createElement('label', `Smoothing (frames): ${smoothingFrames}`);
@@ -365,30 +386,30 @@ function createGUIPanel() {
   smoothingSlider.parent(guiPanel);
   smoothingSlider.style('width', '100%');
   smoothingSlider.style('height', '20px');
-  smoothingSlider.style('margin-bottom', '20px');
+  smoothingSlider.style('margin-bottom', '8px');
   
     // Radial mode toggle  
   radialToggle = createCheckbox('Radial/Linear Toggle', radialMode);
   radialToggle.parent(guiPanel);
-  radialToggle.style('margin-bottom', '15px');
+  radialToggle.style('margin-bottom', '8px');
 
 
   // Overlay mode toggle
   overlayToggle = createCheckbox('Overlay all bands', overlayMode);
   overlayToggle.parent(guiPanel);
-  overlayToggle.style('margin-bottom', '15px');
+  overlayToggle.style('margin-bottom', '8px');
   
   // Normalization toggle
   normalizationToggle = createCheckbox('Normalize amplitude across bands', amplitudeNormalization);
   normalizationToggle.parent(guiPanel);
-  normalizationToggle.style('margin-bottom', '15px');
+  normalizationToggle.style('margin-bottom', '8px');
   //normalizationToggle.style('font-weight', 'bold');
   //normalizationToggle.style('font-size', '14px');
   
   // Logarithmic scaling toggle
   logarithmicToggle = createCheckbox('Logarithmic frequency scaling', logarithmicScaling);
   logarithmicToggle.parent(guiPanel);
-  logarithmicToggle.style('margin-bottom', '15px');
+  logarithmicToggle.style('margin-bottom', '8px');
   //logarithmicToggle.style('font-weight', 'bold');
   //logarithmicToggle.style('font-size', '14px');
   
@@ -405,7 +426,7 @@ function createGUIPanel() {
   logIntensitySlider.parent(guiPanel);
   logIntensitySlider.style('width', '100%');
   logIntensitySlider.style('height', '20px');
-  logIntensitySlider.style('margin-bottom', '20px');
+  logIntensitySlider.style('margin-bottom', '8px');
   
   // Logarithmic multiplier control
   let logMultiplierLabel = createElement('label', `Log Scale Multiplier (0.5-4.0): ${logarithmicMultiplier.toFixed(1)}`);
@@ -420,7 +441,7 @@ function createGUIPanel() {
   logMultiplierSlider.parent(guiPanel);
   logMultiplierSlider.style('width', '100%');
   logMultiplierSlider.style('height', '20px');
-  logMultiplierSlider.style('margin-bottom', '20px');
+  logMultiplierSlider.style('margin-bottom', '8px');
   
   // Grid visibility toggle
   gridToggle = createCheckbox('Show grid lines', showGrid);
@@ -430,7 +451,7 @@ function createGUIPanel() {
   // Labels visibility toggle
   labelsToggle = createCheckbox('Show text labels', showLabels);
   labelsToggle.parent(guiPanel);
-  labelsToggle.style('margin-bottom', '20px');
+  labelsToggle.style('margin-bottom', '8px');
   
   // Song volume control
   let songVolumeLabel = createElement('label', `Song Volume: ${songVolume.toFixed(1)}`);
@@ -443,7 +464,7 @@ function createGUIPanel() {
   songVolumeSlider.parent(guiPanel);
   songVolumeSlider.style('width', '100%');
   songVolumeSlider.style('height', '20px');
-  songVolumeSlider.style('margin-bottom', '20px');
+  songVolumeSlider.style('margin-bottom', '8px');
   
   // Output volume control
   let outputVolumeLabel = createElement('label', `Output Volume: ${outputVol.toFixed(1)}`);
@@ -458,7 +479,7 @@ function createGUIPanel() {
   outputVolumeSlider.parent(guiPanel);
   outputVolumeSlider.style('width', '100%');
   outputVolumeSlider.style('height', '20px');
-  outputVolumeSlider.style('margin-bottom', '30px');
+  outputVolumeSlider.style('margin-bottom', '8px');
   
   // Create initial band controls
   createBandControls();
@@ -499,12 +520,24 @@ function updateFrequencyBands() {
   let logMax = Math.log10(maxFreq);
   
   for (let i = 0; i < numBands; i++) {
-    let logStart = logMin + (i / numBands) * (logMax - logMin);
-    let logEnd = logMin + ((i + 1) / numBands) * (logMax - logMin);
+    // Apply a power curve to redistribute frequencies more evenly
+    // Lower power (0.5-0.8) gives more space to lower frequencies
+    // Higher power (1.2-1.5) gives more space to higher frequencies
+    let curveFactor = 0.7; // Adjust this value to fine-tune distribution
     
+    let normalizedStart = Math.pow(i / numBands, curveFactor);
+    let normalizedEnd = Math.pow((i + 1) / numBands, curveFactor);
+    
+    let logStart = logMin + normalizedStart * (logMax - logMin);
+    let logEnd = logMin + normalizedEnd * (logMax - logMin);
+    
+    console.log (`Band: ${i} LogStart: ${logStart} and LogEnd: ${logEnd} `);
+    console.log (`Band: ${i} LogMin: ${Math.round(Math.pow(10, logStart))} and LogMax: ${Math.round(Math.pow(10, logEnd))} `);
+    
+
     frequencyBands.push({
-      min: Math.round(Math.pow(9, logStart)),
-      max: Math.round(Math.pow(9, logEnd)),
+      min: Math.round(Math.pow(10, logStart)),
+      max: Math.round(Math.pow(10, logEnd)),
       scale: 1.0,
       color: colors[i % colors.length]
     });
@@ -542,7 +575,7 @@ function createBandControls() {
     bandLabel.style('color', `rgb(${frequencyBands[i].color[0]}, ${frequencyBands[i].color[1]}, ${frequencyBands[i].color[2]})`);
     
     // Min frequency
-    let minLabel = createElement('label', `Min: ${frequencyBands[i].min}Hz`);
+    let minLabel = createElement('label', `Min: ${frequencyBands[i].min}Hz ${frequencyToNote(frequencyBands[i].min)}`);
     minLabel.parent(container);
     minLabel.style('display', 'block');
     minLabel.style('font-size', '13px');
@@ -556,7 +589,7 @@ function createBandControls() {
     minSlider.style('margin-bottom', '15px');
     
     // Max frequency
-    let maxLabel = createElement('label', `Max: ${frequencyBands[i].max}Hz`);
+    let maxLabel = createElement('label', `Max: ${frequencyBands[i].max}Hz ${frequencyToNote(frequencyBands[i].max)}`);
     maxLabel.parent(container);
     maxLabel.style('display', 'block');
     maxLabel.style('font-size', '13px');
@@ -923,8 +956,8 @@ function updateBandSettings() {
     band.scale = newScale;
     
     // Update labels
-    control.minLabel.html(`Min: ${newMin}Hz`);
-    control.maxLabel.html(`Max: ${newMax}Hz`);
+    control.minLabel.html(`Min: ${newMin}Hz ${frequencyToNote(newMin)}`);
+    control.maxLabel.html(`Max: ${newMax}Hz ${frequencyToNote(newMax)}`);
     control.scaleLabel.html(`Amplitude Scale: ${newScale.toFixed(1)}x`);
   }
 }
@@ -1980,11 +2013,6 @@ function generateRadialSeparateSVG() {
   
   svg += `
   </style>
-  
-  <!-- Background Layer -->
-  <g id="background-layer">
-    <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
-  </g>
   
   <!-- Grid and Axes Layer -->
   <g id="grid-axes-layer">`;

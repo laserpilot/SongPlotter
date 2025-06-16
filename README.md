@@ -1,5 +1,7 @@
 # SongPlotter
 
+## [Live Demo here](https://laserpilot.github.io/SongPlotter/)
+
 A real-time frequency visualization tool designed for pen plotting, built with p5.js and p5.sound. I built this with Claude Code for my own purposes and have wanted to make it for ages - I made a ![3D version](https://ablairneal.com/project/sonic-sculptures) of the same concept in around 2014, but for 3D printing. 
 
 The AI development process is still something I'm experimenting with, and I think a lot of this code could be simplified or refactored, but for my purposes it's doing what I'd like!
