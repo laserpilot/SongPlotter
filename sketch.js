@@ -1149,11 +1149,11 @@ function drawRadialVisualization() {
   
   // Draw time markers (12 hour positions)
   textAlign(CENTER, CENTER);
-  textSize(14);
+  textSize(22);
   fill(100);
   for (let i = 0; i < 12; i++) {
     let angle = map(i, 0, 12, 0, TWO_PI) - PI/2;
-    let markRadius = maxRadius + 20;
+    let markRadius = maxRadius + 50;
     let x = centerX + cos(angle) * markRadius;
     let y = centerY + sin(angle) * markRadius;
     
@@ -1259,15 +1259,15 @@ function drawRadialSeparate(centerX, centerY, baseRadius, maxRadius) {
 
 function drawRadialLegend(centerX, centerY, maxRadius) {
   // Draw legend for overlay mode - moved further left to avoid overlap
-  let legendX = centerX - maxRadius - 180;
+  let legendX = centerX - maxRadius - 300;
   let legendY = centerY - (numBands * 20) / 2;
   
   textAlign(LEFT, CENTER);
-  textSize(14);
+  textSize(22);
   
   for (let i = 0; i < numBands; i++) {
     let band = frequencyBands[i];
-    let y = legendY + i * 20;
+    let y = legendY + i * 50;
     
     // Color line
     stroke(band.color[0], band.color[1], band.color[2]);
@@ -1522,7 +1522,7 @@ function drawUI() {
   // Display current filename in bottom left of visualization
   fill(0);
   textAlign(CENTER, BOTTOM);
-  textSize(20);
+  textSize(22);
   textStyle(BOLD);
   
   let displayName = currentSongName || "No file loaded";
@@ -1537,7 +1537,7 @@ function drawUI() {
   // rect(100, height - 140, textWidth + 20, 25, 4);
   
   fill(0);
-  text(displayName, canvasWidth/2, height - 30);
+  text(displayName, canvasWidth/2+100, height - 30);
 }
 
 
@@ -1697,14 +1697,6 @@ function generateLinearSeparateSVG() {
     <text x="${x}" y="${canvasHeight - margin + 20}" text-anchor="middle" class="label">${formatTime(time)}</text>`;
   }
   
-  // Band labels
-  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
-    let sectionY = margin + bandIndex * plotHeight;
-    let band = frequencyBands[bandIndex];
-    svg += `
-    <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${band.min}-${band.max}Hz</text>`;
-  }
-  
   svg += `
   </g>
   
@@ -1736,7 +1728,16 @@ function generateLinearSeparateSVG() {
   
   <!-- Song Title -->
   <g id="song-title-layer">
-    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text`
+
+      // Band labels
+  for (let bandIndex = 0; bandIndex < numBands; bandIndex++) {
+    let sectionY = margin + bandIndex * plotHeight;
+    let band = frequencyBands[bandIndex];
+    svg += `
+    <text x="${margin - 10}" y="${sectionY + plotHeight / 2}" text-anchor="end" class="label">${band.min}-${band.max}Hz</text>`;
+  }
+ svg += `
   </g>
   
 </svg>`;
@@ -1755,7 +1756,7 @@ function generateLinearOverlaySVG() {
   <style>
     .axis { stroke: black; stroke-width: 3; }
     .grid { stroke: #cccccc; stroke-width: 1; }
-    .label { font-family: Ubuntu, sans-serif; font-size: 16px; fill: black; }`;
+    .label { font-family: Ubuntu, sans-serif; font-size: 24px; fill: black; }`;
   
   // Generate CSS classes for each band
   for (let i = 0; i < numBands; i++) {
@@ -1806,24 +1807,6 @@ function generateLinearOverlaySVG() {
     <text x="${x}" y="${canvasHeight - margin + 30}" text-anchor="middle" class="label">${formatTime(time)}</text>`;
   }
   
-  // Amplitude labels
-  for (let i = 0; i <= 10; i++) {
-    let y = map(i, 0, 10, canvasHeight - margin, margin);
-    let amplitude = map(i, 0, 10, 0, 255);
-    svg += `
-    <text x="${margin - 20}" y="${y + 5}" text-anchor="end" class="label">${Math.round(amplitude)}</text>`;
-  }
-  
-  // Legend
-  let legendX = canvasWidth - margin - 200;
-  let legendY = margin + 30;
-  for (let i = 0; i < numBands; i++) {
-    let band = frequencyBands[i];
-    let y = legendY + i * 25;
-    svg += `
-    <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
-    <text x="${legendX + 40}" y="${y + 5}" class="label">${band.min}-${band.max}Hz</text>`;
-  }
   
   svg += `
   </g>
@@ -1855,7 +1838,26 @@ function generateLinearOverlaySVG() {
   
   <!-- Song Title -->
   <g id="song-title-layer">
-    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text>
+    <text x="${canvasWidth / 2}" y="${canvasHeight - 30}" text-anchor="middle" class="label" font-weight="bold" font-size="20">${currentSongName}</text`
+      // Amplitude labels
+  for (let i = 0; i <= 10; i++) {
+    let y = map(i, 0, 10, canvasHeight - margin, margin);
+    let amplitude = map(i, 0, 10, 0, 255);
+    svg += `
+    <text x="${margin - 20}" y="${y + 5}" text-anchor="end" class="label">${Math.round(amplitude)}</text>`;
+  }
+  
+  // Legend
+  let legendX = canvasWidth - margin - 200;
+  let legendY = margin + 30;
+  for (let i = 0; i < numBands; i++) {
+    let band = frequencyBands[i];
+    let y = legendY + i * 25;
+    svg += `
+    <line x1="${legendX}" y1="${y}" x2="${legendX + 30}" y2="${y}" stroke="rgb(${band.color[0]}, ${band.color[1]}, ${band.color[2]})" stroke-width="4"/>
+    <text x="${legendX + 40}" y="${y + 5}" class="label">${band.min}-${band.max}Hz</text>`;
+  }
+  svg+= `
   </g>
   
 </svg>`;
@@ -1882,7 +1884,7 @@ function generateRadialOverlaySVG() {
   ${generateMetadata()}
   <style>
     .axis { stroke: #cccccc; stroke-width: 1; fill: none; }
-    .label { font-family: Ubuntu, sans-serif; font-size: 14px; fill: black; text-anchor: middle; }
+    .label { font-family: Yu Gothic UI, sans-serif; font-size: 28px; fill: black; text-anchor: middle; }
     .center { fill: black; }`;
   
   // Generate CSS classes for each band
@@ -1904,7 +1906,7 @@ function generateRadialOverlaySVG() {
   <g id="grid-axes-layer">`;
   
   for (let i = 1; i <= 5; i++) {
-    let radius = baseRadius + (maxRadius - baseRadius) * (i / 5);
+    let radius = baseRadius + (maxRadius - baseRadius - 60) * (i / 5);
     svg += `
     <circle cx="${centerX}" cy="${centerY}" r="${radius}" class="axis"/>`;
   }
@@ -1930,7 +1932,7 @@ function generateRadialOverlaySVG() {
   }
   
   // Legend - moved further left to avoid overlap
-  let legendX = centerX - maxRadius - 180;
+  let legendX = centerX - maxRadius - 220;
   let legendY = centerY - (numBands * 25) / 2;
   for (let i = 0; i < numBands; i++) {
     let band = frequencyBands[i];
