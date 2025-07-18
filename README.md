@@ -6,7 +6,7 @@ A real-time frequency visualization tool designed for pen plotting, built with p
 
 The AI development process is still something I'm experimenting with, and I think a lot of this code could be simplified or refactored, but for my purposes it's doing what I'd like!
 
-![SongPlotter Interface](current_state.jpeg)
+![SongPlotter Interface](current_state.gif)
 
 ## Overview
 
